@@ -1,0 +1,31 @@
+name: Supabase Migrations
+
+on:
+  pull_request:
+    paths: ["backend/supabase/**", ".github/workflows/supabase-migrations.yml"]
+  push:
+    branches: [main]
+    paths: ["backend/supabase/**", ".github/workflows/supabase-migrations.yml"]
+
+jobs:
+  migrate-and-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Lokale Supabase-Instanz starten (Docker, im Runner vorinstalliert)
+        working-directory: backend
+        run: supabase start
+
+      - name: Migrationen + Seed anwenden
+        working-directory: backend
+        run: supabase db reset
+
+      - name: Supabase-Instanz stoppen
+        if: always()
+        working-directory: backend
+        run: supabase stop

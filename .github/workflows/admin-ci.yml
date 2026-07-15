@@ -1,0 +1,31 @@
+name: Admin Dashboard CI
+
+on:
+  pull_request:
+    paths: ["admin/**", ".github/workflows/admin-ci.yml"]
+  push:
+    branches: [main]
+    paths: ["admin/**", ".github/workflows/admin-ci.yml"]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - name: Build (ohne echte Supabase-Zugangsdaten — Datenrouten sind force-dynamic)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder

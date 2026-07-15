@@ -1,0 +1,28 @@
+
+!.env.example
+# Env & Secrets
+# Flutter / Dart
+# Node (Admin-Dashboard)
+# OS
+# Supabase
+*.key
+*.pem
+.DS_Store
+.claude/settings.local.json
+.env
+.env.*
+.next/
+app/**/*.freezed.dart
+app/**/*.g.dart
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/android/.gradle/
+app/build/
+app/ios/.symlinks/
+app/ios/Pods/
+backend/supabase/.branches/
+backend/supabase/.temp/
+dist/
+node_modules/
