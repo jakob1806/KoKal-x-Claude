@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/auth/auth_providers.dart';
+import '../../../core/auth/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import 'widgets/auth_section.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
+    final user = ref.watch(currentUserProvider);
+
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.symmetric(
@@ -16,22 +22,10 @@ class ProfileScreen extends StatelessWidget {
           vertical: AppSpacing.xl,
         ),
         children: [
-          Center(
-            child: Column(
-              children: [
-                CircleAvatar(radius: 32, backgroundColor: colors.accentPrimary),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Anmelden',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                Text(
-                  'Für Favoriten, Benachrichtigungen & Empfehlungen',
-                  style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
-                ),
-              ],
-            ),
-          ),
+          if (user == null)
+            const AuthSection()
+          else
+            _SignedInHeader(email: user.email ?? 'Angemeldet', colors: colors),
           const SizedBox(height: AppSpacing.xxl),
           for (final row in const [
             'Meine Favoriten',
@@ -43,6 +37,40 @@ class ProfileScreen extends StatelessWidget {
             _ProfileRow(label: row, colors: colors),
         ],
       ),
+    );
+  }
+}
+
+class _SignedInHeader extends StatelessWidget {
+  const _SignedInHeader({required this.email, required this.colors});
+  final String email;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 32,
+          backgroundColor: colors.accentPrimary,
+          child: const Icon(
+            Icons.person_rounded,
+            color: Colors.white,
+            size: 28,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          email,
+          style: Theme.of(context).textTheme.headlineSmall,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        TextButton(
+          onPressed: AuthService.signOut,
+          child: Text('Abmelden', style: TextStyle(color: colors.error)),
+        ),
+      ],
     );
   }
 }
