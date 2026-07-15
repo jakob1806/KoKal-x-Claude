@@ -26,3 +26,5 @@ backend/supabase/.branches/
 backend/supabase/.temp/
 dist/
 node_modules/
+supabase/.branches/
+supabase/.temp/
