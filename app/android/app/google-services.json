@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "347689001853",
+    "project_id": "klassik-muenchen",
+    "storage_bucket": "klassik-muenchen.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:347689001853:android:a917b1f2e9f3a895f4a214",
+        "android_client_info": {
+          "package_name": "de.klassikmuenchen.klassik_muenchen"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzWlBttWOBQkukvNtvaUuC1xS2vWAT9gs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

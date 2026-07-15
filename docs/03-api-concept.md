@@ -40,7 +40,9 @@ Aufruf: `POST /rest/v1/rpc/events_nearby { "lat": 48.13, "lng": 11.58, "radius_k
 
 ---
 
-## 3. Such-API (Edge Function `/search`)
+## 3. Such-API
+
+**Tatsächliche v1-Umsetzung:** keine Meilisearch-Edge-Function, sondern eine Postgres-RPC `search_all(q, result_limit)` direkt über PostgREST (`POST /rest/v1/rpc/search_all`), die per `pg_trgm`/`ILIKE` über Events, Personen, Ensembles und Venues sucht und ein nach Ähnlichkeit sortiertes, typisiertes Ergebnis liefert (siehe `backend/supabase/migrations/20260718000001_search_all.sql`). Bewusste Entscheidung: die nötigen Trigram-Indizes existierten bereits seit Phase 0, MVP-Datenvolumen braucht kein separates Suchsystem. Der Rest dieses Abschnitts beschreibt den ursprünglich geplanten Meilisearch-Ausbau — bleibt als Option für später (mehr Datenvolumen, Facetten-UX, Sub-50ms-Anspruch), ist aber nicht implementiert.
 
 ```
 GET /functions/v1/search?q=bach+matthäus&filters=genre:kirchenmusik&facets=genre,venue,date

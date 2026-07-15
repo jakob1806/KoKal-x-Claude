@@ -5,8 +5,11 @@ import '../../features/calendar/presentation/calendar_screen.dart';
 import '../../features/event_detail/presentation/event_detail_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
+import '../../features/persons/presentation/ensemble_detail_screen.dart';
+import '../../features/persons/presentation/person_detail_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/search/presentation/search_screen.dart';
+import '../../features/venues/presentation/venue_detail_screen.dart';
 import '../widgets/app_shell.dart';
 
 /// Routing-Baum nach docs/05-navigation-structure.md.
@@ -68,6 +71,24 @@ final appRouter = GoRouter(
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) =>
           EventDetailScreen(slug: state.pathParameters['slug']!),
+    ),
+    GoRoute(
+      path: '/person/:slug',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) =>
+          PersonDetailScreen(slug: state.pathParameters['slug']!),
+    ),
+    GoRoute(
+      path: '/ensemble/:slug',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) =>
+          EnsembleDetailScreen(slug: state.pathParameters['slug']!),
+    ),
+    GoRoute(
+      path: '/venue/:slug',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) =>
+          VenueDetailScreen(slug: state.pathParameters['slug']!),
     ),
   ],
 );
