@@ -13,6 +13,7 @@ class FavoriteButton extends ConsumerWidget {
     this.size = 22,
     this.activeColor,
     this.inactiveColor,
+    this.compact = false,
     super.key,
   });
 
@@ -21,35 +22,58 @@ class FavoriteButton extends ConsumerWidget {
   final Color? activeColor;
   final Color? inactiveColor;
 
+  /// Ohne Standard-IconButton-Mindestgröße (48x48) — für Overlays auf kleinen
+  /// Kartenbildern, z. B. [EventCard].
+  final bool compact;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final favorites = ref.watch(favoriteIdsProvider);
     final isFavorited = favorites.valueOrNull?.contains(eventId) ?? false;
     final colors = context.appColors;
 
-    return IconButton(
-      icon: Icon(
-        isFavorited ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-        size: size,
-        color: isFavorited
-            ? (activeColor ?? colors.accentPrimary)
-            : (inactiveColor ?? colors.textTertiary),
-      ),
-      onPressed: () async {
-        if (ref.read(currentUserProvider) == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Zum Favorisieren bitte im Profil-Tab anmelden.'),
-            ),
-          );
-          return;
-        }
-        await FavoritesService.toggle(
-          ref,
-          eventId: eventId,
-          isFavorited: isFavorited,
+    Future<void> handleTap() async {
+      if (ref.read(currentUserProvider) == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Zum Favorisieren bitte im Profil-Tab anmelden.'),
+          ),
         );
-      },
+        return;
+      }
+      await FavoritesService.toggle(
+        ref,
+        eventId: eventId,
+        isFavorited: isFavorited,
+      );
+    }
+
+    // compact wird ausschließlich als Overlay auf (dunklem) Artwork verwendet
+    // (siehe EventCard) — Weiß als Default statt textTertiary, sonst zu
+    // kontrastarm.
+    final defaultInactive = compact ? Colors.white : colors.textTertiary;
+    final icon = Icon(
+      isFavorited ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+      size: size,
+      color: isFavorited
+          ? (activeColor ?? colors.accentPrimary)
+          : (inactiveColor ?? defaultInactive),
     );
+
+    if (compact) {
+      return GestureDetector(
+        onTap: handleTap,
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: const Color(0x59000000),
+            shape: BoxShape.circle,
+          ),
+          child: icon,
+        ),
+      );
+    }
+
+    return IconButton(icon: icon, onPressed: handleTap);
   }
 }

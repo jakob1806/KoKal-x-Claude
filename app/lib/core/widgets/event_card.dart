@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import 'favorite_button.dart';
 import 'genre_artwork.dart';
 
 /// Karten-Widget für Event-Listen (Home-Sektionen, Suchergebnisse, Favoriten).
@@ -9,6 +10,7 @@ import 'genre_artwork.dart';
 /// docs/04-design-system.md, §4 „EventCard".
 class EventCard extends StatelessWidget {
   const EventCard({
+    required this.eventId,
     required this.title,
     required this.venueAndTime,
     required this.genre,
@@ -18,6 +20,7 @@ class EventCard extends StatelessWidget {
     super.key,
   });
 
+  final String eventId;
   final String title;
   final String venueAndTime;
   final EventGenre genre;
@@ -67,6 +70,15 @@ class EventCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: FavoriteButton(
+                      eventId: eventId,
+                      size: 15,
+                      compact: true,
+                    ),
+                  ),
                 ],
               ),
             ),
