@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
 // Event-Daten ändern sich häufig (Preise, Restkarten) — nie statisch cachen.
@@ -34,10 +35,14 @@ export default async function EventsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Veranstaltungen</h1>
-          <p className="text-sm text-neutral-500">
-            Kommende Events, redaktionell prüfbar. Neu anlegen &amp; bearbeiten folgt in Phase 1.
-          </p>
+          <p className="text-sm text-neutral-500">Kommende Events, redaktionell prüfbar.</p>
         </div>
+        <Link
+          href="/events/new"
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+        >
+          Neu anlegen
+        </Link>
       </div>
 
       {error && (
@@ -58,6 +63,7 @@ export default async function EventsPage() {
                 <th className="px-4 py-3 font-medium">Ort</th>
                 <th className="px-4 py-3 font-medium">Termin</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -77,11 +83,19 @@ export default async function EventsPage() {
                         {STATUS_LABEL[event.status] ?? event.status}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/events/${event.id}`}
+                        className="text-sm font-medium text-neutral-700 hover:text-neutral-900"
+                      >
+                        Bearbeiten
+                      </Link>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-neutral-400">
+                  <td colSpan={5} className="px-4 py-10 text-center text-neutral-400">
                     Noch keine Veranstaltungen. Seed-Daten via{" "}
                     <code className="font-mono">supabase db reset</code> laden oder Import starten.
                   </td>
