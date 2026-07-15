@@ -185,9 +185,11 @@ export function EventForm({
         </Select>
       </Field>
 
-      <p className="text-xs text-neutral-400">
-        Programm (Werke) und Mitwirkende folgen als nächster Ausbauschritt.
-      </p>
+      {!initial && (
+        <p className="text-xs text-neutral-400">
+          Programm und Mitwirkende lassen sich nach dem Anlegen auf der Bearbeiten-Seite ergänzen.
+        </p>
+      )}
 
       <div className="mt-2">
         <SubmitButton>{initial ? "Speichern" : "Event anlegen"}</SubmitButton>

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteButton } from "@/components/delete-button";
@@ -54,10 +55,18 @@ export default async function EditEventPage({
     <div className="p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">{event.title} bearbeiten</h1>
-        <DeleteButton
-          action={deleteEvent.bind(null, id)}
-          confirmMessage={`"${event.title}" wirklich löschen?`}
-        />
+        <div className="flex items-center gap-4">
+          <Link
+            href={`/events/${id}/program`}
+            className="text-sm font-medium text-neutral-700 hover:text-neutral-900"
+          >
+            Programm & Mitwirkende →
+          </Link>
+          <DeleteButton
+            action={deleteEvent.bind(null, id)}
+            confirmMessage={`"${event.title}" wirklich löschen?`}
+          />
+        </div>
       </div>
       <div className="mt-6">
         <EventForm
