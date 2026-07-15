@@ -10,7 +10,23 @@ enum EventGenre {
   kirchenmusik,
   kammermusik,
   orchester,
-  sonstiges,
+  sonstiges;
+
+  /// Bildet den Postgres-Enum-Slug (genre_type, siehe
+  /// docs/02-database-schema.md) auf die schmalere UI-Palette ab — Werte
+  /// ohne eigenes Artwork (orgel, jazz, neue_musik, ...) fallen auf
+  /// [sonstiges] bzw. den nächstliegenden visuellen Verwandten zurück.
+  static EventGenre fromSlug(String? slug) => switch (slug) {
+    'oper' => EventGenre.oper,
+    'konzert' => EventGenre.konzert,
+    'chormusik' => EventGenre.chormusik,
+    'kirchenmusik' => EventGenre.kirchenmusik,
+    'orgel' => EventGenre.kirchenmusik,
+    'kammermusik' => EventGenre.kammermusik,
+    'liederabend' => EventGenre.kammermusik,
+    'orchester' => EventGenre.orchester,
+    _ => EventGenre.sonstiges,
+  };
 }
 
 class GenreArtwork extends StatelessWidget {
