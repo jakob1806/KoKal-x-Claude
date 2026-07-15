@@ -1,6 +1,6 @@
 -- Events (Kern-Tabelle), siehe docs/02-database-schema.md §9
 create table events (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   title text not null,
   subtitle text,

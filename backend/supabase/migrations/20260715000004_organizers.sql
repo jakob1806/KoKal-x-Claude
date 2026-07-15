@@ -1,6 +1,6 @@
 -- Veranstalter, siehe docs/02-database-schema.md §7
 create table organizers (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   name text not null,
   description_de text,

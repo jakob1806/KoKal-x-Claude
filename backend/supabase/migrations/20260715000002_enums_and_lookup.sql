@@ -7,7 +7,7 @@ create type genre_type as enum (
 );
 
 create table genres (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug genre_type not null unique,
   label_de text not null,
   label_en text,

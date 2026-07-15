@@ -15,7 +15,7 @@ create table event_works (
 );
 
 create table event_participants (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   event_id uuid references events(id) on delete cascade,
   person_id uuid references persons(id),
   ensemble_id uuid references ensembles(id),

@@ -1,6 +1,6 @@
 -- Datenquellen & Ingestion-Läufe, siehe docs/02-database-schema.md §8
 create table sources (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   name text not null,
   type source_type not null,
   url text not null,
@@ -17,7 +17,7 @@ create table sources (
 );
 
 create table ingestion_runs (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   source_id uuid references sources(id) not null,
   started_at timestamptz not null default now(),
   finished_at timestamptz,

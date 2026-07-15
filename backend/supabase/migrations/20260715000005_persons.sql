@@ -1,6 +1,6 @@
 -- Personen (Komponisten, Dirigenten, Solisten), siehe docs/02-database-schema.md §4
 create table persons (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   full_name text not null,
   roles participant_role[] not null default '{}',

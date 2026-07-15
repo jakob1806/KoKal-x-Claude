@@ -29,12 +29,13 @@ Design-Prinzip: **Personen** (Individuen: Komponisten, Dirigenten, Solisten) und
 ## 2. Erweiterungen
 
 ```sql
-create extension if not exists "uuid-ossp";
 create extension if not exists postgis;      -- Geodaten (Umkreissuche)
 create extension if not exists pg_trgm;       -- Fuzzy-Matching für Dedupe & Suche
-create extension if not exists pgvector;      -- Embeddings für Empfehlungen (Phase 3)
+create extension if not exists vector;        -- Embeddings für Empfehlungen (Phase 3), Paketname "pgvector"
 create extension if not exists pgmq;          -- Message Queue für Ingestion-Pipeline
 ```
+
+UUIDs werden mit dem in Postgres eingebauten `gen_random_uuid()` erzeugt statt mit `uuid-ossp`/`uuid_generate_v4()` — kein Extension-Bedarf, und auf Supabase-Projekten liegt `uuid-ossp` ohnehin im `extensions`-Schema statt `public` und wäre unqualifiziert nicht auffindbar. `postgis`/`pg_trgm`/`vector`/`pgmq` werden hier bewusst ohne `WITH SCHEMA` erzeugt und landen dadurch in `public`, wo der Rest dieses Dokuments sie unqualifiziert referenziert (`geography`, `gin_trgm_ops`, `vector(...)`, `ST_*`).
 
 ---
 
@@ -48,7 +49,7 @@ create type genre_type as enum (
 );
 
 create table genres (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug genre_type not null unique,
   label_de text not null,
   label_en text,
@@ -71,7 +72,7 @@ create type ensemble_type as enum (
 
 ```sql
 create table persons (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   full_name text not null,
   roles participant_role[] not null default '{}',   -- z.B. {komponist,dirigent}
@@ -98,7 +99,7 @@ create index idx_persons_search on persons using gin(search_vector);
 create index idx_persons_name_trgm on persons using gin(full_name gin_trgm_ops);
 
 create table ensembles (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   name text not null,
   type ensemble_type not null,
@@ -128,7 +129,7 @@ create index idx_ensembles_name_trgm on ensembles using gin(name gin_trgm_ops);
 
 ```sql
 create table works (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   title text not null,
   composer_id uuid references persons(id),
   catalog_number text,              -- z.B. "BWV 244", "op. 125"
@@ -148,7 +149,7 @@ create index idx_works_title_trgm on works using gin(title gin_trgm_ops);
 
 ```sql
 create table venues (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   name text not null,
   description_de text,
@@ -177,7 +178,7 @@ create index idx_venues_name_trgm on venues using gin(name gin_trgm_ops);
 
 ```sql
 create table organizers (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   name text not null,
   description_de text,
@@ -198,7 +199,7 @@ create type source_type as enum ('api', 'rss', 'ical', 'schema_org', 'scrape', '
 create type source_status as enum ('active', 'paused', 'error', 'under_review');
 
 create table sources (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   name text not null,
   type source_type not null,
   url text not null,
@@ -215,7 +216,7 @@ create table sources (
 );
 
 create table ingestion_runs (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   source_id uuid references sources(id) not null,
   started_at timestamptz not null default now(),
   finished_at timestamptz,
@@ -238,7 +239,7 @@ create type event_status as enum (
 );
 
 create table events (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   title text not null,
   subtitle text,
@@ -312,7 +313,7 @@ create table event_works (
 
 -- Mitwirkende (Dirigent, Solisten, Chor, Orchester ...)
 create table event_participants (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   event_id uuid references events(id) on delete cascade,
   person_id uuid references persons(id),
   ensemble_id uuid references ensembles(id),
@@ -348,7 +349,7 @@ create table favorites (
 );
 
 create table favorite_lists (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id) on delete cascade,
   name text not null,
   created_at timestamptz default now()
@@ -387,7 +388,7 @@ create table notification_preferences (
 );
 
 create table push_tokens (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id) on delete cascade,
   token text not null unique,
   platform text not null,   -- ios | android
@@ -395,7 +396,7 @@ create table push_tokens (
 );
 
 create table search_history (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id) on delete cascade,
   query text not null,
   created_at timestamptz default now()
@@ -434,7 +435,7 @@ create table event_change_log (
 );
 
 create table duplicate_candidates (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   event_a_id uuid references events(id),
   event_b_id uuid references events(id),
   similarity_score numeric(4,3),

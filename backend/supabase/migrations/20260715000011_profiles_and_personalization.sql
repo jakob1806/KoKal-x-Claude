@@ -16,7 +16,7 @@ create table favorites (
 );
 
 create table favorite_lists (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id) on delete cascade,
   name text not null,
   created_at timestamptz default now()
@@ -55,7 +55,7 @@ create table notification_preferences (
 );
 
 create table push_tokens (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id) on delete cascade,
   token text not null unique,
   platform text not null,
@@ -63,7 +63,7 @@ create table push_tokens (
 );
 
 create table search_history (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id) on delete cascade,
   query text not null,
   created_at timestamptz default now()

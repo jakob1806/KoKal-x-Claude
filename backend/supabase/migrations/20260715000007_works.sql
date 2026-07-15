@@ -1,6 +1,6 @@
 -- Werke, siehe docs/02-database-schema.md §5
 create table works (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   title text not null,
   composer_id uuid references persons(id),
   catalog_number text,

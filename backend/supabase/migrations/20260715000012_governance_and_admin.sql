@@ -17,7 +17,7 @@ create table event_change_log (
 create index idx_event_change_log_event on event_change_log(event_id);
 
 create table duplicate_candidates (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   event_a_id uuid references events(id),
   event_b_id uuid references events(id),
   similarity_score numeric(4,3),
