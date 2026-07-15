@@ -3,33 +3,43 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-interface VenueRow {
+interface EnsembleRow {
   id: string;
   name: string;
-  address_city: string;
-  capacity: number | null;
+  type: string;
   is_verified: boolean;
 }
 
-export default async function VenuesPage() {
+const TYPE_LABEL: Record<string, string> = {
+  chor: "Chor",
+  orchester: "Orchester",
+  kammerensemble: "Kammerensemble",
+  big_band: "Big Band",
+  sonstiges: "Sonstiges",
+};
+
+export default async function EnsemblesPage() {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("venues")
-    .select("id, name, address_city, capacity, is_verified")
+    .from("ensembles")
+    .select("id, name, type, is_verified")
     .order("name")
-    .returns<VenueRow[]>();
+    .returns<EnsembleRow[]>();
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Venues</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Ensembles</h1>
           <p className="mt-1 max-w-xl text-sm text-neutral-500">
-            Veranstaltungsorte redaktionell pflegen.
+            Chöre, Orchester und Kammerensembles.{" "}
+            <Link href="/persons" className="underline hover:text-neutral-700">
+              ← Personen verwalten
+            </Link>
           </p>
         </div>
         <Link
-          href="/venues/new"
+          href="/ensembles/new"
           className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
         >
           Neu anlegen
@@ -37,7 +47,7 @@ export default async function VenuesPage() {
       </div>
 
       {error && (
-        <p className="mt-6 text-sm text-amber-700">Konnte Venues nicht laden: {error.message}</p>
+        <p className="mt-6 text-sm text-amber-700">Konnte Ensembles nicht laden: {error.message}</p>
       )}
 
       {!error && (
@@ -46,34 +56,35 @@ export default async function VenuesPage() {
             <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Stadt</th>
-                <th className="px-4 py-3 font-medium">Kapazität</th>
+                <th className="px-4 py-3 font-medium">Typ</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {data?.length ? (
-                data.map((venue) => (
-                  <tr key={venue.id} className="hover:bg-neutral-50">
-                    <td className="px-4 py-3 font-medium text-neutral-900">{venue.name}</td>
-                    <td className="px-4 py-3 text-neutral-600">{venue.address_city}</td>
-                    <td className="px-4 py-3 text-neutral-600 tabular-nums">
-                      {venue.capacity ?? "—"}
+                data.map((ensemble) => (
+                  <tr key={ensemble.id} className="hover:bg-neutral-50">
+                    <td className="px-4 py-3 font-medium text-neutral-900">{ensemble.name}</td>
+                    <td className="px-4 py-3 text-neutral-600">
+                      {TYPE_LABEL[ensemble.type] ?? ensemble.type}
                     </td>
                     <td className="px-4 py-3">
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          venue.is_verified
+                          ensemble.is_verified
                             ? "bg-emerald-50 text-emerald-700"
                             : "bg-neutral-100 text-neutral-600"
                         }`}
                       >
-                        {venue.is_verified ? "Geprüft" : "Ungeprüft"}
+                        {ensemble.is_verified ? "Geprüft" : "Ungeprüft"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/venues/${venue.id}`} className="text-sm font-medium text-neutral-700 hover:text-neutral-900">
+                      <Link
+                        href={`/ensembles/${ensemble.id}`}
+                        className="text-sm font-medium text-neutral-700 hover:text-neutral-900"
+                      >
                         Bearbeiten
                       </Link>
                     </td>
@@ -81,8 +92,8 @@ export default async function VenuesPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-neutral-400">
-                    Noch keine Venues angelegt.
+                  <td colSpan={4} className="px-4 py-10 text-center text-neutral-400">
+                    Noch keine Ensembles angelegt.
                   </td>
                 </tr>
               )}
