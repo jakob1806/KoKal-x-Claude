@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { href: "/reports", label: "Fehlerberichte" },
 ];
 
-export function Sidebar() {
+export function Sidebar({ userEmail }: { userEmail?: string }) {
   return (
     <aside className="w-60 shrink-0 border-r border-neutral-200 bg-white px-4 py-6 flex flex-col gap-6">
       <div>
@@ -29,6 +29,11 @@ export function Sidebar() {
           </Link>
         ))}
       </nav>
+      {userEmail && (
+        <p className="mt-auto truncate text-xs text-neutral-400" title={userEmail}>
+          {userEmail}
+        </p>
+      )}
     </aside>
   );
 }
