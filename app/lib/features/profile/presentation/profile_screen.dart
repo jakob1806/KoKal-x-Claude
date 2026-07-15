@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/auth/auth_providers.dart';
 import '../../../core/auth/auth_service.dart';
@@ -27,14 +28,26 @@ class ProfileScreen extends ConsumerWidget {
           else
             _SignedInHeader(email: user.email ?? 'Angemeldet', colors: colors),
           const SizedBox(height: AppSpacing.xxl),
+          _ProfileRow(
+            label: 'Meine Favoriten',
+            colors: colors,
+            onTap: () => context.push('/favorites'),
+          ),
           for (final row in const [
-            'Meine Favoriten',
             'Meine Listen',
             'Interessen',
             'Benachrichtigungen',
             'Darstellung',
           ])
-            _ProfileRow(label: row, colors: colors),
+            _ProfileRow(
+              label: row,
+              colors: colors,
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('„$row" folgt in einer der nächsten Phasen.'),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -76,34 +89,38 @@ class _SignedInHeader extends StatelessWidget {
 }
 
 class _ProfileRow extends StatelessWidget {
-  const _ProfileRow({required this.label, required this.colors});
+  const _ProfileRow({required this.label, required this.colors, this.onTap});
   final String label;
   final AppColorsExtension colors;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.separator)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: colors.separator)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
             ),
-          ),
-          Icon(
-            Icons.chevron_right_rounded,
-            color: colors.textTertiary,
-            size: 20,
-          ),
-        ],
+            Icon(
+              Icons.chevron_right_rounded,
+              color: colors.textTertiary,
+              size: 20,
+            ),
+          ],
+        ),
       ),
     );
   }

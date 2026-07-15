@@ -272,6 +272,7 @@ class _Section extends StatelessWidget {
             itemBuilder: (context, i) {
               final e = events[i];
               return EventCard(
+                eventId: e.id,
                 title: e.title,
                 venueAndTime: e.venueAndTime,
                 genre: e.genre,
