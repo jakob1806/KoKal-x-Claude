@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/calendar/ics_export.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/favorite_button.dart';
@@ -108,6 +109,28 @@ class EventDetailScreen extends ConsumerWidget {
                         eventId: event['id'],
                         activeColor: colors.accentPrimary,
                         inactiveColor: Colors.white,
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.calendar_month_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        tooltip: 'Zum Kalender hinzufügen',
+                        onPressed: start == null
+                            ? null
+                            : () => IcsExport.shareEvent(
+                                uid: event['id'],
+                                title: event['title'] ?? '',
+                                description: event['description_de'],
+                                start: start,
+                                durationMinutes: event['duration_minutes'],
+                                location: venue != null
+                                    ? '${venue['name']}, ${venue['address_street']}, ${venue['address_zip']} ${venue['address_city']}'
+                                    : null,
+                                url:
+                                    event['website_url'] ?? event['ticket_url'],
+                              ),
                       ),
                       IconButton(
                         icon: const Icon(
