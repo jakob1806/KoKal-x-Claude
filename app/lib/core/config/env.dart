@@ -17,7 +17,6 @@ class Env {
 
   static String get supabaseUrl => _read('SUPABASE_URL');
   static String get supabaseAnonKey => _read('SUPABASE_ANON_KEY');
-  static String get googleMapsApiKey => _read('GOOGLE_MAPS_API_KEY');
 
   static String _read(String key) {
     final fromDefine = String.fromEnvironment(key);

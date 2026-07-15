@@ -3,7 +3,7 @@
 Die beste Plattform für klassische Musik, Chormusik, Oper, Vokalmusik, Kirchenmusik und Orchesterkonzerte in München — alle Veranstaltungen an einem Ort, automatisch aktuell gehalten.
 
 ## Stack (Kurzfassung)
-Flutter (iOS/Android) · Supabase (Postgres + PostGIS) · Meilisearch · Google Maps · Firebase Cloud Messaging · Supabase Edge Functions · GitHub Actions/Codemagic.
+Flutter (iOS/Android) · Supabase (Postgres + PostGIS) · Meilisearch · flutter_map/OpenStreetMap · Firebase Cloud Messaging · Supabase Edge Functions · GitHub Actions/Codemagic.
 Begründung der Wahl: [docs/01-architecture.md](docs/01-architecture.md#1-zusammenfassung-der-stack-entscheidung)
 
 ## Projektstruktur
@@ -30,7 +30,7 @@ docs/       Vollständige Projektplanung
 **Flutter-App**
 ```
 cd app
-cp .env.example .env   # mit echten Supabase-/Google-Maps-Keys füllen
+cp .env.example .env   # mit echten Supabase-Keys füllen
 flutter pub get
 flutter run
 ```
@@ -50,14 +50,15 @@ supabase start   # benötigt Docker Desktop, siehe „Offene Punkte" unten
 supabase db reset   # wendet alle Migrationen + Seed-Daten an
 ```
 
-## Status — Phase 0 abgeschlossen
-- Vollständiges Postgres-Schema als 14 geordnete Migrationen (`backend/supabase/migrations`) inkl. RLS-Policies und Seed-Daten für 6 Münchner Venues
-- Flutter-Grundgerüst: Theme/Design-Tokens, go_router mit Tab-Shell, alle 6 Kernscreens als Platzhalter, `flutter analyze`/`flutter test` grün
-- Admin-Dashboard-Grundgerüst: Next.js + Supabase-Client, Events-Liste live angebunden, Navigation für alle geplanten Redaktionsbereiche, `npm run build` grün
+## Status — Phase 0 abgeschlossen, Backend live
+- Vollständiges Postgres-Schema als 14 geordnete Migrationen (`backend/supabase/migrations`) inkl. RLS-Policies ist auf dem echten Supabase-Projekt angewendet, Seed-Daten für 6 Münchner Venues + 2 Beispiel-Events geladen
+- Flutter-Grundgerüst: Theme/Design-Tokens, go_router mit Tab-Shell, alle 6 Kernscreens als Platzhalter, Karte läuft auf flutter_map/OpenStreetMap (kein API-Key/Billing nötig), `flutter analyze`/`flutter test` grün
+- Admin-Dashboard-Grundgerüst: Next.js + Supabase-Client, Events-Liste live gegen echte Daten, Navigation für alle geplanten Redaktionsbereiche, `npm run build` grün
 - CI/CD-Workflows für alle drei Teile eingerichtet
+- Repo auf GitHub: [jakob1806/KoKal-x-Claude](https://github.com/jakob1806/KoKal-x-Claude)
+- `app/.env` und `admin/.env.local` sind lokal mit echten Supabase-Zugangsdaten befüllt (nicht committet)
 
 ### Offene Punkte für Phase 1
-- **Supabase-Cloud-Projekt** (dev/staging/prod) ist noch nicht angelegt — das erfordert einen Supabase-Account, den nur du einrichten kannst. Sobald ein Projekt existiert, verbinde ich das lokale Repo per `supabase link`.
-- **Docker** ist auf dieser Maschine nicht installiert — ohne Docker lässt sich `supabase start` (lokale Dev-Datenbank) hier nicht ausführen. Die Migrationen wurden daher bisher nur manuell gegen das Schema-Dokument geprüft, noch nicht live gegen Postgres getestet. Der CI-Workflow `supabase-migrations.yml` führt diesen Test automatisch in GitHub Actions aus (dort ist Docker vorhanden).
-- Restliche 45 Beispiel-Events aus dem MVP-Plan folgen, sobald das Admin-Dashboard Schreibfunktionen hat (bewusst nicht als Fake-Daten vorab angelegt).
-- Auth-Flow (Sign in with Apple/Google), Meilisearch-Anbindung, Google-Maps-Integration: siehe Roadmap Phase 1.
+- **Docker** ist auf dieser Maschine nicht installiert — ohne Docker lässt sich `supabase start` (lokale Dev-Datenbank) hier nicht ausführen; Migrationen werden direkt gegen das echte Projekt gepusht (`supabase db push`). Der CI-Workflow `supabase-migrations.yml` testet zusätzlich gegen eine frische lokale Instanz in GitHub Actions (dort ist Docker vorhanden).
+- Restliche Beispiel-Events aus dem MVP-Plan folgen, sobald das Admin-Dashboard Schreibfunktionen hat (bewusst nicht als Fake-Daten vorab angelegt).
+- Auth-Flow (Sign in with Apple/Google), Meilisearch-Anbindung: siehe Roadmap Phase 1.
