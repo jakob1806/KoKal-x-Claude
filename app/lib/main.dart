@@ -4,10 +4,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/env.dart';
+import 'core/onboarding/onboarding_status.dart';
 import 'core/push/push_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -51,11 +53,21 @@ Future<void> main() async {
     unawaited(PushService.initialize());
   }
 
-  runApp(const ProviderScope(child: KlassikMuenchenApp()));
+  final onboardingDone = await OnboardingStatus.isCompleted();
+
+  runApp(
+    ProviderScope(
+      child: KlassikMuenchenApp(
+        initialLocation: onboardingDone ? '/home' : '/onboarding',
+      ),
+    ),
+  );
 }
 
 class KlassikMuenchenApp extends ConsumerStatefulWidget {
-  const KlassikMuenchenApp({super.key});
+  const KlassikMuenchenApp({super.key, this.initialLocation = '/home'});
+
+  final String initialLocation;
 
   @override
   ConsumerState<KlassikMuenchenApp> createState() => _KlassikMuenchenAppState();
@@ -63,10 +75,12 @@ class KlassikMuenchenApp extends ConsumerStatefulWidget {
 
 class _KlassikMuenchenAppState extends ConsumerState<KlassikMuenchenApp> {
   StreamSubscription<AuthState>? _authSubscription;
+  late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
+    _router = buildAppRouter(initialLocation: widget.initialLocation);
     try {
       _authSubscription = Supabase.instance.client.auth.onAuthStateChange
           .listen((data) {
@@ -93,7 +107,7 @@ class _KlassikMuenchenAppState extends ConsumerState<KlassikMuenchenApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ref.watch(themeModeProvider),
-      routerConfig: appRouter,
+      routerConfig: _router,
       locale: const Locale('de', 'DE'),
       supportedLocales: const [Locale('de', 'DE'), Locale('en', 'US')],
       localizationsDelegates: const [
