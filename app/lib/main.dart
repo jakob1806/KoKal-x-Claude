@@ -11,6 +11,7 @@ import 'core/config/env.dart';
 import 'core/push/push_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_mode_provider.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -78,7 +79,7 @@ class _KlassikMuenchenAppState extends ConsumerState<KlassikMuenchenApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
+      themeMode: ref.watch(themeModeProvider),
       routerConfig: appRouter,
       locale: const Locale('de', 'DE'),
       supportedLocales: const [Locale('de', 'DE'), Locale('en', 'US')],

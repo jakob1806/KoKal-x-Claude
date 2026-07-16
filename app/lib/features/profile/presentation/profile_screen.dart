@@ -6,7 +6,9 @@ import '../../../core/auth/auth_providers.dart';
 import '../../../core/auth/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/theme/theme_mode_provider.dart';
 import 'widgets/auth_section.dart';
+import 'widgets/theme_mode_sheet.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -37,7 +39,6 @@ class ProfileScreen extends ConsumerWidget {
             'Meine Listen',
             'Interessen',
             'Benachrichtigungen',
-            'Darstellung',
           ])
             _ProfileRow(
               label: row,
@@ -48,6 +49,15 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
             ),
+          _ProfileRow(
+            label: 'Darstellung',
+            colors: colors,
+            onTap: () => showModalBottomSheet(
+              context: context,
+              builder: (_) =>
+                  ThemeModeSheet(current: ref.read(themeModeProvider)),
+            ),
+          ),
         ],
       ),
     );
