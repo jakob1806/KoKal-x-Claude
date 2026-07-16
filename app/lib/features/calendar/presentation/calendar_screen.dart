@@ -41,7 +41,10 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               horizontal: AppSpacing.screenPaddingMobile,
               vertical: AppSpacing.md,
             ),
-            child: Text('Kalender', style: Theme.of(context).textTheme.headlineMedium),
+            child: Text(
+              'Kalender',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(
@@ -118,7 +121,10 @@ class _AgendaList extends StatelessWidget {
     }
     if (error != null) {
       return Center(
-        child: Text('Fehler beim Laden: $error', style: TextStyle(color: colors.error)),
+        child: Text(
+          'Fehler beim Laden: $error',
+          style: TextStyle(color: colors.error),
+        ),
       );
     }
     if (events.isEmpty) {
@@ -155,7 +161,10 @@ class _AgendaList extends StatelessWidget {
           ),
           title: Text(
             e.title,
-            style: TextStyle(fontWeight: FontWeight.w700, color: colors.textPrimary),
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: colors.textPrimary,
+            ),
           ),
           subtitle: Text(
             e.venueAndTime,
