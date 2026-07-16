@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,7 +19,7 @@ final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
   ref,
   slug,
 ) async {
-  return Supabase.instance.client
+  final event = await Supabase.instance.client
       .from('events')
       .select('''
         id, slug, title, subtitle, description_de,
@@ -33,6 +35,20 @@ final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
       .eq('slug', slug)
       .neq('status', 'draft')
       .maybeSingle();
+
+  // Speist recommended_events()'s Venue-"besucht"-Signal — siehe
+  // docs/06-mvp-plan.md. Fire-and-forget, blockiert nicht das Rendern.
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+  if (event != null && userId != null) {
+    unawaited(
+      Supabase.instance.client.from('event_views').insert({
+        'user_id': userId,
+        'event_id': event['id'],
+      }),
+    );
+  }
+
+  return event;
 });
 
 typedef _SimilarEventsKey = ({
