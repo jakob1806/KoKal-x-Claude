@@ -49,3 +49,27 @@ final monthEventsProvider = FutureProvider.autoDispose
       }
       return byDay;
     });
+
+/// Für den Agenda-Modus: chronologische Liste ab heute statt an einen
+/// Kalendermonat gebunden, mit Cap statt Datumsgrenze — bei Konzerten kein
+/// Bedarf für Pagination, ein Limit reicht als Schutz vor unbegrenztem Fetch.
+final agendaEventsProvider =
+    FutureProvider.autoDispose<Map<DateTime, List<HomeEventItem>>>((ref) async {
+      final now = DateTime.now();
+      final rows = await Supabase.instance.client
+          .from('events')
+          .select(_calendarEventColumns)
+          .eq('status', 'scheduled')
+          .gte('start_datetime', _dayKey(now).toIso8601String())
+          .order('start_datetime')
+          .limit(200);
+
+      final byDay = <DateTime, List<HomeEventItem>>{};
+      for (final row in rows as List) {
+        final map = row as Map<String, dynamic>;
+        final item = HomeEventItem.fromRow(map);
+        if (item.startDateTime == null) continue;
+        byDay.putIfAbsent(_dayKey(item.startDateTime!), () => []).add(item);
+      }
+      return byDay;
+    });
