@@ -13,6 +13,8 @@ import '../application/calendar_providers.dart';
 
 DateTime _dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
 
+enum _CalendarViewMode { month, week, agenda }
+
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
 
@@ -23,6 +25,7 @@ class CalendarScreen extends ConsumerStatefulWidget {
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
+  _CalendarViewMode _mode = _CalendarViewMode.month;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +33,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final monthKey = MonthKey(_focusedDay.year, _focusedDay.month);
     final monthAsync = ref.watch(monthEventsProvider(monthKey));
     final eventsByDay = monthAsync.valueOrNull ?? const {};
-    final agenda = eventsByDay[_dayKey(_selectedDay)] ?? const [];
+    final dayAgenda = eventsByDay[_dayKey(_selectedDay)] ?? const [];
 
     return SafeArea(
       child: Column(
@@ -50,47 +53,80 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.screenPaddingMobile,
             ),
-            child: TableCalendar(
-              locale: 'de_DE',
-              firstDay: DateTime.now().subtract(const Duration(days: 365)),
-              lastDay: DateTime.now().add(const Duration(days: 365)),
-              focusedDay: _focusedDay,
-              selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-              eventLoader: (day) => eventsByDay[_dayKey(day)] ?? const [],
-              onDaySelected: (selected, focused) => setState(() {
-                _selectedDay = selected;
-                _focusedDay = focused;
-              }),
-              onPageChanged: (focused) => setState(() => _focusedDay = focused),
-              headerStyle: const HeaderStyle(
-                formatButtonVisible: false,
-                titleCentered: true,
-              ),
-              calendarStyle: CalendarStyle(
-                todayDecoration: BoxDecoration(
-                  color: colors.accentPrimary,
-                  shape: BoxShape.circle,
+            child: SegmentedButton<_CalendarViewMode>(
+              segments: const [
+                ButtonSegment(
+                  value: _CalendarViewMode.month,
+                  label: Text('Monat'),
                 ),
-                selectedDecoration: BoxDecoration(
-                  color: colors.accentSecondary,
-                  shape: BoxShape.circle,
+                ButtonSegment(
+                  value: _CalendarViewMode.week,
+                  label: Text('Woche'),
                 ),
-                markerDecoration: BoxDecoration(
-                  color: colors.accentPrimary,
-                  shape: BoxShape.circle,
+                ButtonSegment(
+                  value: _CalendarViewMode.agenda,
+                  label: Text('Agenda'),
                 ),
-              ),
+              ],
+              selected: {_mode},
+              onSelectionChanged: (selection) =>
+                  setState(() => _mode = selection.first),
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Divider(color: colors.separator, height: 1),
-          Expanded(
-            child: _AgendaList(
-              day: _selectedDay,
-              events: agenda,
-              isLoading: monthAsync.isLoading && !monthAsync.hasValue,
-              error: monthAsync.hasError ? monthAsync.error : null,
+          if (_mode != _CalendarViewMode.agenda) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.screenPaddingMobile,
+              ),
+              child: TableCalendar(
+                locale: 'de_DE',
+                firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                lastDay: DateTime.now().add(const Duration(days: 365)),
+                focusedDay: _focusedDay,
+                calendarFormat: _mode == _CalendarViewMode.week
+                    ? CalendarFormat.week
+                    : CalendarFormat.month,
+                selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                eventLoader: (day) => eventsByDay[_dayKey(day)] ?? const [],
+                onDaySelected: (selected, focused) => setState(() {
+                  _selectedDay = selected;
+                  _focusedDay = focused;
+                }),
+                onPageChanged: (focused) =>
+                    setState(() => _focusedDay = focused),
+                headerStyle: const HeaderStyle(
+                  formatButtonVisible: false,
+                  titleCentered: true,
+                ),
+                calendarStyle: CalendarStyle(
+                  todayDecoration: BoxDecoration(
+                    color: colors.accentPrimary,
+                    shape: BoxShape.circle,
+                  ),
+                  selectedDecoration: BoxDecoration(
+                    color: colors.accentSecondary,
+                    shape: BoxShape.circle,
+                  ),
+                  markerDecoration: BoxDecoration(
+                    color: colors.accentPrimary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
             ),
+            const SizedBox(height: AppSpacing.sm),
+            Divider(color: colors.separator, height: 1),
+          ],
+          Expanded(
+            child: _mode == _CalendarViewMode.agenda
+                ? const _FullAgendaList()
+                : _DayAgendaList(
+                    day: _selectedDay,
+                    events: dayAgenda,
+                    isLoading: monthAsync.isLoading && !monthAsync.hasValue,
+                    error: monthAsync.hasError ? monthAsync.error : null,
+                  ),
           ),
         ],
       ),
@@ -98,8 +134,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   }
 }
 
-class _AgendaList extends StatelessWidget {
-  const _AgendaList({
+class _DayAgendaList extends StatelessWidget {
+  const _DayAgendaList({
     required this.day,
     required this.events,
     required this.isLoading,
@@ -147,33 +183,108 @@ class _AgendaList extends StatelessWidget {
       ),
       itemCount: events.length,
       separatorBuilder: (_, __) => Divider(color: colors.separator, height: 1),
-      itemBuilder: (context, i) {
-        final e = events[i];
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          leading: SizedBox(
-            width: 48,
-            height: 48,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: GenreArtwork(genre: e.genre),
+      itemBuilder: (context, i) => _EventTile(event: events[i], colors: colors),
+    );
+  }
+}
+
+/// Agenda-Modus: chronologische Liste ab heute mit Tages-Überschriften statt
+/// der Tagesauswahl in Monat/Woche — siehe [agendaEventsProvider].
+class _FullAgendaList extends ConsumerWidget {
+  const _FullAgendaList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.appColors;
+    final async = ref.watch(agendaEventsProvider);
+
+    return async.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Text(
+          'Fehler beim Laden: $e',
+          style: TextStyle(color: colors.error),
+        ),
+      ),
+      data: (eventsByDay) {
+        if (eventsByDay.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Text(
+                'Keine anstehenden Veranstaltungen.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: colors.textSecondary),
+              ),
             ),
+          );
+        }
+
+        final days = eventsByDay.keys.toList()..sort();
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.screenPaddingMobile,
+            vertical: AppSpacing.md,
           ),
-          title: Text(
-            e.title,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: colors.textPrimary,
-            ),
-          ),
-          subtitle: Text(
-            e.venueAndTime,
-            style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
-          ),
-          trailing: FavoriteButton(eventId: e.id, size: 20),
-          onTap: () => context.push('/event/${e.slug}'),
+          itemCount: days.length,
+          itemBuilder: (context, i) {
+            final day = days[i];
+            final events = eventsByDay[day]!;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (i > 0) const SizedBox(height: AppSpacing.lg),
+                Text(
+                  DateFormat('EEEE, d. MMMM', 'de_DE').format(day),
+                  style: TextStyle(
+                    color: colors.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                for (final event in events)
+                  _EventTile(event: event, colors: colors),
+              ],
+            );
+          },
         );
       },
+    );
+  }
+}
+
+class _EventTile extends StatelessWidget {
+  const _EventTile({required this.event, required this.colors});
+
+  final HomeEventItem event;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+      leading: SizedBox(
+        width: 48,
+        height: 48,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: GenreArtwork(genre: event.genre),
+        ),
+      ),
+      title: Text(
+        event.title,
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: colors.textPrimary,
+        ),
+      ),
+      subtitle: Text(
+        event.venueAndTime,
+        style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
+      ),
+      trailing: FavoriteButton(eventId: event.id, size: 20),
+      onTap: () => context.push('/event/${event.slug}'),
     );
   }
 }
