@@ -41,5 +41,16 @@ class AuthService {
     );
   }
 
-  static Future<void> signOut() => _client.auth.signOut();
+  /// Löscht zuerst die eigenen Push-Tokens — sonst würde ein zweiter Nutzer,
+  /// der sich danach auf demselben Gerät anmeldet, bis zum nächsten
+  /// Push-Berechtigungs-Durchlauf über den fremden, noch verknüpften Token
+  /// erreichbar bleiben (token ist unique, der Upsert beim nächsten Login
+  /// heilt das zwar selbst, aber erst dann).
+  static Future<void> signOut() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId != null) {
+      await _client.from('push_tokens').delete().eq('user_id', userId);
+    }
+    await _client.auth.signOut();
+  }
 }
