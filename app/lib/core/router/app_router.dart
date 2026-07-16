@@ -5,6 +5,7 @@ import '../../features/calendar/presentation/calendar_screen.dart';
 import '../../features/event_detail/presentation/event_detail_screen.dart';
 import '../../features/favorites/presentation/favorites_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
+import '../../features/interests/presentation/interests_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
 import '../../features/persons/presentation/ensemble_detail_screen.dart';
 import '../../features/persons/presentation/person_detail_screen.dart';
@@ -95,6 +96,11 @@ final appRouter = GoRouter(
       path: '/favorites',
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) => const FavoritesScreen(),
+    ),
+    GoRoute(
+      path: '/interests',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const InterestsScreen(),
     ),
   ],
 );
