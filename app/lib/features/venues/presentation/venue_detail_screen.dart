@@ -159,6 +159,21 @@ class VenueDetailScreen extends ConsumerWidget {
                         ),
                       ),
                     ],
+                    if ((venue['mvv_stops'] as List?)?.isNotEmpty ?? false) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'MVV-Anbindung',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.headlineSmall?.copyWith(fontSize: 15),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      for (final stop in venue['mvv_stops'] as List)
+                        _MvvStopRow(
+                          stop: stop as Map<String, dynamic>,
+                          colors: colors,
+                        ),
+                    ],
                     const SizedBox(height: AppSpacing.xxl),
                     Text(
                       'Kommende Veranstaltungen',
@@ -182,6 +197,82 @@ class VenueDetailScreen extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _MvvStopRow extends StatelessWidget {
+  const _MvvStopRow({required this.stop, required this.colors});
+
+  final Map<String, dynamic> stop;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines =
+        (stop['lines'] as List?)?.whereType<String>().toList() ?? const [];
+    final walkMinutes = stop['walk_minutes'] as int?;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.directions_transit_rounded,
+            size: 18,
+            color: colors.textTertiary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  [
+                    stop['name'] as String?,
+                    walkMinutes != null ? '$walkMinutes Min. zu Fuß' : null,
+                  ].whereType<String>().join(' · '),
+                  style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (lines.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final line in lines)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.backgroundSecondary,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: colors.separator),
+                          ),
+                          child: Text(
+                            line,
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
