@@ -35,11 +35,12 @@ class ProfileScreen extends ConsumerWidget {
             colors: colors,
             onTap: () => context.push('/favorites'),
           ),
-          for (final row in const [
-            'Meine Listen',
-            'Interessen',
-            'Benachrichtigungen',
-          ])
+          _ProfileRow(
+            label: 'Interessen',
+            colors: colors,
+            onTap: () => context.push('/interests'),
+          ),
+          for (final row in const ['Meine Listen', 'Benachrichtigungen'])
             _ProfileRow(
               label: row,
               colors: colors,
