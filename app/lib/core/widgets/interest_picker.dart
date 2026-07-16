@@ -5,7 +5,7 @@ import '../interests/interests_providers.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 
-/// Die drei Interessen-Kategorien als Chip-Picker — gemeinsam genutzt von
+/// Die vier Interessen-Kategorien als Chip-Picker — gemeinsam genutzt von
 /// InterestsScreen (Profil-Einstellung) und OnboardingScreen (Erststart).
 class InterestPicker extends ConsumerWidget {
   const InterestPicker({super.key});
@@ -15,6 +15,8 @@ class InterestPicker extends ConsumerWidget {
     final genres = ref.watch(genreOptionsProvider).valueOrNull ?? const [];
     final composers =
         ref.watch(composerOptionsProvider).valueOrNull ?? const [];
+    final ensembles =
+        ref.watch(ensembleOptionsProvider).valueOrNull ?? const [];
     final venues = ref.watch(venueOptionsProvider).valueOrNull ?? const [];
     final selected =
         ref.watch(userInterestsProvider).valueOrNull ?? UserInterests.empty;
@@ -35,6 +37,13 @@ class InterestPicker extends ConsumerWidget {
           options: composers,
           selectedIds: selected.personIds,
           category: InterestCategory.person,
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        InterestSection(
+          title: 'Ensembles',
+          options: ensembles,
+          selectedIds: selected.ensembleIds,
+          category: InterestCategory.ensemble,
         ),
         const SizedBox(height: AppSpacing.lg),
         InterestSection(

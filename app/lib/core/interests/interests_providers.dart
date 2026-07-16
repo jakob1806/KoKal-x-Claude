@@ -44,6 +44,22 @@ final composerOptionsProvider =
           .toList();
     });
 
+final ensembleOptionsProvider =
+    FutureProvider.autoDispose<List<InterestOption>>((ref) async {
+      final rows = await Supabase.instance.client
+          .from('ensembles')
+          .select('id, name')
+          .order('name');
+      return (rows as List)
+          .map(
+            (r) => InterestOption(
+              id: r['id'] as String,
+              label: r['name'] as String,
+            ),
+          )
+          .toList();
+    });
+
 final venueOptionsProvider = FutureProvider.autoDispose<List<InterestOption>>((
   ref,
 ) async {
@@ -63,14 +79,21 @@ class UserInterests {
   const UserInterests({
     required this.genreIds,
     required this.personIds,
+    required this.ensembleIds,
     required this.venueIds,
   });
 
   final Set<String> genreIds;
   final Set<String> personIds;
+  final Set<String> ensembleIds;
   final Set<String> venueIds;
 
-  static const empty = UserInterests(genreIds: {}, personIds: {}, venueIds: {});
+  static const empty = UserInterests(
+    genreIds: {},
+    personIds: {},
+    ensembleIds: {},
+    venueIds: {},
+  );
 }
 
 final userInterestsProvider = FutureProvider.autoDispose<UserInterests>((
@@ -85,12 +108,21 @@ final userInterestsProvider = FutureProvider.autoDispose<UserInterests>((
         .from('profile_interest_genres')
         .select('genre_id')
         .eq('user_id', user.id),
+    // user_favorite_persons/_ensembles/_venues statt eigener
+    // profile_interest_*-Tabellen — die existierten schon seit Phase 0
+    // für genau dieses Feature (siehe RLS-Policy-Namen "Nutzer verwaltet
+    // eigene Interessen"), nur profile_interest_genres hat dort keine
+    // Entsprechung.
     client
-        .from('profile_interest_persons')
+        .from('user_favorite_persons')
         .select('person_id')
         .eq('user_id', user.id),
     client
-        .from('profile_interest_venues')
+        .from('user_favorite_ensembles')
+        .select('ensemble_id')
+        .eq('user_id', user.id),
+    client
+        .from('user_favorite_venues')
         .select('venue_id')
         .eq('user_id', user.id),
   ]);
@@ -100,11 +132,14 @@ final userInterestsProvider = FutureProvider.autoDispose<UserInterests>((
     personIds: (results[1] as List)
         .map((r) => r['person_id'] as String)
         .toSet(),
-    venueIds: (results[2] as List).map((r) => r['venue_id'] as String).toSet(),
+    ensembleIds: (results[2] as List)
+        .map((r) => r['ensemble_id'] as String)
+        .toSet(),
+    venueIds: (results[3] as List).map((r) => r['venue_id'] as String).toSet(),
   );
 });
 
-enum InterestCategory { genre, person, venue }
+enum InterestCategory { genre, person, ensemble, venue }
 
 class InterestsService {
   const InterestsService._();
@@ -112,8 +147,9 @@ class InterestsService {
   static const Map<InterestCategory, (String table, String column)>
   _tableAndColumn = {
     InterestCategory.genre: ('profile_interest_genres', 'genre_id'),
-    InterestCategory.person: ('profile_interest_persons', 'person_id'),
-    InterestCategory.venue: ('profile_interest_venues', 'venue_id'),
+    InterestCategory.person: ('user_favorite_persons', 'person_id'),
+    InterestCategory.ensemble: ('user_favorite_ensembles', 'ensemble_id'),
+    InterestCategory.venue: ('user_favorite_venues', 'venue_id'),
   };
 
   static Future<void> toggle(
