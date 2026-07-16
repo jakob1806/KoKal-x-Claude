@@ -60,5 +60,7 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Klassik München nutzt deinen Standort, um Veranstaltungen und Spielstätten in deiner Nähe zu zeigen.</string>
 </dict>
 </plist>

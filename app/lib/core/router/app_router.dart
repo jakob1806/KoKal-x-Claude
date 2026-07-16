@@ -8,6 +8,7 @@ import '../../features/home/presentation/home_screen.dart';
 import '../../features/interests/presentation/interests_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
 import '../../features/notifications/presentation/notification_settings_screen.dart';
+import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/persons/presentation/ensemble_detail_screen.dart';
 import '../../features/persons/presentation/person_detail_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -19,9 +20,9 @@ import '../widgets/app_shell.dart';
 /// Deep-Link-Schema: muc-classical://event/{slug} etc. (§3 im selben Dokument).
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
-final appRouter = GoRouter(
+GoRouter buildAppRouter({String initialLocation = '/home'}) => GoRouter(
   navigatorKey: rootNavigatorKey,
-  initialLocation: '/home',
+  initialLocation: initialLocation,
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) =>
@@ -107,6 +108,11 @@ final appRouter = GoRouter(
       path: '/notification-settings',
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) => const NotificationSettingsScreen(),
+    ),
+    GoRoute(
+      path: '/onboarding',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const OnboardingScreen(),
     ),
   ],
 );
