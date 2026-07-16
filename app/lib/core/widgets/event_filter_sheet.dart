@@ -26,6 +26,13 @@ final Map<double?, String> _priceLabels = {
   50.0: 'bis 50 €',
 };
 
+final Map<double?, String> _distanceLabels = {
+  null: 'Egal',
+  1.0: '1 km',
+  5.0: '5 km',
+  10.0: '10 km',
+};
+
 class _EventFilterSheet extends ConsumerStatefulWidget {
   const _EventFilterSheet();
 
@@ -39,6 +46,7 @@ class _EventFilterSheetState extends ConsumerState<_EventFilterSheet> {
   double? _maxPrice;
   bool _accessibleOnly = false;
   bool _openAirOnly = false;
+  double? _maxDistanceKm;
 
   @override
   void initState() {
@@ -49,6 +57,7 @@ class _EventFilterSheetState extends ConsumerState<_EventFilterSheet> {
     _maxPrice = current.maxPrice;
     _accessibleOnly = current.accessibleOnly;
     _openAirOnly = current.openAirOnly;
+    _maxDistanceKm = current.maxDistanceKm;
   }
 
   Future<void> _pickDateRange() async {
@@ -70,6 +79,7 @@ class _EventFilterSheetState extends ConsumerState<_EventFilterSheet> {
       maxPrice: _maxPrice,
       accessibleOnly: _accessibleOnly,
       openAirOnly: _openAirOnly,
+      maxDistanceKm: _maxDistanceKm,
     );
     Navigator.of(context).pop();
   }
@@ -81,6 +91,7 @@ class _EventFilterSheetState extends ConsumerState<_EventFilterSheet> {
       _maxPrice = null;
       _accessibleOnly = false;
       _openAirOnly = false;
+      _maxDistanceKm = null;
     });
   }
 
@@ -162,6 +173,26 @@ class _EventFilterSheetState extends ConsumerState<_EventFilterSheet> {
                     label: Text(entry.value),
                     selected: _maxPrice == entry.key,
                     onSelected: (_) => setState(() => _maxPrice = entry.key),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text('Entfernung', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Ab deinem im Profil hinterlegten Standort.',
+              style: TextStyle(color: colors.textTertiary, fontSize: 12),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final entry in _distanceLabels.entries)
+                  ChoiceChip(
+                    label: Text(entry.value),
+                    selected: _maxDistanceKm == entry.key,
+                    onSelected: (_) =>
+                        setState(() => _maxDistanceKm = entry.key),
                   ),
               ],
             ),

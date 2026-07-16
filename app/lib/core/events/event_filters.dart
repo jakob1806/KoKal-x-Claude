@@ -7,6 +7,7 @@ class EventFilters {
     this.maxPrice,
     this.accessibleOnly = false,
     this.openAirOnly = false,
+    this.maxDistanceKm,
   });
 
   final DateTimeRange? dateRange;
@@ -14,6 +15,7 @@ class EventFilters {
   final double? maxPrice;
   final bool accessibleOnly;
   final bool openAirOnly;
+  final double? maxDistanceKm;
 
   static const empty = EventFilters();
 
@@ -22,7 +24,8 @@ class EventFilters {
       genreIds.isNotEmpty ||
       maxPrice != null ||
       accessibleOnly ||
-      openAirOnly;
+      openAirOnly ||
+      maxDistanceKm != null;
 
   int get activeCount => [
     dateRange != null,
@@ -30,5 +33,6 @@ class EventFilters {
     maxPrice != null,
     accessibleOnly,
     openAirOnly,
+    maxDistanceKm != null,
   ].where((active) => active).length;
 }
