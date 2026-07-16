@@ -6,8 +6,12 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/auth/auth_providers.dart';
+import '../../../core/events/filtered_events_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/event_filter_sheet.dart';
+import '../../../core/widgets/genre_artwork.dart';
+import '../../home/application/home_providers.dart';
 
 final _queryProvider = StateProvider<String>((ref) => '');
 
@@ -112,6 +116,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final colors = context.appColors;
     final query = ref.watch(_queryProvider);
     final resultsAsync = ref.watch(_searchResultsProvider);
+    final filters = ref.watch(eventFiltersProvider);
 
     return SafeArea(
       child: Padding(
@@ -122,47 +127,78 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.backgroundSecondary,
-                borderRadius: BorderRadius.circular(AppRadius.button),
-                border: Border.all(color: colors.separator),
-              ),
-              child: TextField(
-                controller: _controller,
-                onChanged: _onChanged,
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  icon: Icon(
-                    Icons.search_rounded,
-                    color: colors.textTertiary,
-                    size: 20,
-                  ),
-                  hintText: 'Werk, Komponist, Ensemble, Ort …',
-                  hintStyle: TextStyle(
-                    color: colors.textTertiary,
-                    fontSize: 14,
-                  ),
-                  suffixIcon: query.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: Icon(
-                            Icons.close_rounded,
-                            color: colors.textTertiary,
-                            size: 18,
-                          ),
-                          onPressed: () {
-                            _controller.clear();
-                            ref.read(_queryProvider.notifier).state = '';
-                          },
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.backgroundSecondary,
+                      borderRadius: BorderRadius.circular(AppRadius.button),
+                      border: Border.all(color: colors.separator),
+                    ),
+                    child: TextField(
+                      controller: _controller,
+                      onChanged: _onChanged,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        icon: Icon(
+                          Icons.search_rounded,
+                          color: colors.textTertiary,
+                          size: 20,
                         ),
+                        hintText: 'Werk, Komponist, Ensemble, Ort …',
+                        hintStyle: TextStyle(
+                          color: colors.textTertiary,
+                          fontSize: 14,
+                        ),
+                        suffixIcon: query.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: Icon(
+                                  Icons.close_rounded,
+                                  color: colors.textTertiary,
+                                  size: 18,
+                                ),
+                                onPressed: () {
+                                  _controller.clear();
+                                  ref.read(_queryProvider.notifier).state = '';
+                                },
+                              ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: AppSpacing.sm),
+                _FilterButton(
+                  activeCount: filters.activeCount,
+                  onTap: () => showEventFilterSheet(context),
+                ),
+              ],
             ),
             const SizedBox(height: AppSpacing.xl),
             Expanded(
-              child: query.trim().length < 2
+              child: filters.isActive
+                  ? ref
+                        .watch(filteredEventsProvider)
+                        .when(
+                          loading: () =>
+                              const Center(child: CircularProgressIndicator()),
+                          error: (e, _) => Center(
+                            child: Text(
+                              'Filter fehlgeschlagen: $e',
+                              style: TextStyle(color: colors.error),
+                            ),
+                          ),
+                          data: (events) => _FilteredResultsList(
+                            events: events,
+                            colors: colors,
+                          ),
+                        )
+                  : query.trim().length < 2
                   ? _EmptyState(colors: colors, onSelect: _selectQuery)
                   : resultsAsync.when(
                       loading: () =>
@@ -180,6 +216,119 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FilterButton extends StatelessWidget {
+  const _FilterButton({required this.activeCount, required this.onTap});
+
+  final int activeCount;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final active = activeCount > 0;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.button),
+      child: Container(
+        width: 44,
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? colors.accentPrimary : colors.backgroundSecondary,
+          borderRadius: BorderRadius.circular(AppRadius.button),
+          border: Border.all(
+            color: active ? colors.accentPrimary : colors.separator,
+          ),
+        ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(
+              Icons.tune_rounded,
+              color: active ? Colors.white : colors.textSecondary,
+              size: 20,
+            ),
+            if (active)
+              Positioned(
+                right: -6,
+                top: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.accentSecondary,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$activeCount',
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilteredResultsList extends StatelessWidget {
+  const _FilteredResultsList({required this.events, required this.colors});
+
+  final List<HomeEventItem> events;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context) {
+    if (events.isEmpty) {
+      return Center(
+        child: Text(
+          'Keine Veranstaltungen für diese Filter.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: colors.textTertiary, fontSize: 13),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      itemCount: events.length,
+      separatorBuilder: (_, __) => Divider(color: colors.separator, height: 1),
+      itemBuilder: (context, i) {
+        final e = events[i];
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: SizedBox(
+            width: 48,
+            height: 48,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: GenreArtwork(genre: e.genre),
+            ),
+          ),
+          title: Text(
+            e.title,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: colors.textPrimary,
+            ),
+          ),
+          subtitle: Text(
+            e.venueAndTime,
+            style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
+          ),
+          onTap: () => context.push('/event/${e.slug}'),
+        );
+      },
     );
   }
 }

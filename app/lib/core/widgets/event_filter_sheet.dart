@@ -1,0 +1,196 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
+import '../events/event_filters.dart';
+import '../events/filtered_events_providers.dart';
+import '../interests/interests_providers.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+
+/// "FilterSheet (Modal, von überall aufrufbar)" laut
+/// docs/05-navigation-structure.md — ein einziger Einstiegspunkt statt
+/// screen-eigener Filter-UI, damit Suche, Karte etc. dieselbe Sheet nutzen
+/// können, sobald sie Filter brauchen.
+Future<void> showEventFilterSheet(BuildContext context) {
+  return showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => const _EventFilterSheet(),
+  );
+}
+
+final Map<double?, String> _priceLabels = {
+  null: 'Alle',
+  20.0: 'bis 20 €',
+  50.0: 'bis 50 €',
+};
+
+class _EventFilterSheet extends ConsumerStatefulWidget {
+  const _EventFilterSheet();
+
+  @override
+  ConsumerState<_EventFilterSheet> createState() => _EventFilterSheetState();
+}
+
+class _EventFilterSheetState extends ConsumerState<_EventFilterSheet> {
+  DateTimeRange? _dateRange;
+  late Set<String> _genreIds;
+  double? _maxPrice;
+  bool _accessibleOnly = false;
+  bool _openAirOnly = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final current = ref.read(eventFiltersProvider);
+    _dateRange = current.dateRange;
+    _genreIds = Set.of(current.genreIds);
+    _maxPrice = current.maxPrice;
+    _accessibleOnly = current.accessibleOnly;
+    _openAirOnly = current.openAirOnly;
+  }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      initialDateRange: _dateRange,
+      locale: const Locale('de', 'DE'),
+    );
+    if (picked != null) setState(() => _dateRange = picked);
+  }
+
+  void _apply() {
+    ref.read(eventFiltersProvider.notifier).state = EventFilters(
+      dateRange: _dateRange,
+      genreIds: _genreIds,
+      maxPrice: _maxPrice,
+      accessibleOnly: _accessibleOnly,
+      openAirOnly: _openAirOnly,
+    );
+    Navigator.of(context).pop();
+  }
+
+  void _reset() {
+    setState(() {
+      _dateRange = null;
+      _genreIds = {};
+      _maxPrice = null;
+      _accessibleOnly = false;
+      _openAirOnly = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    final genres = ref.watch(genreOptionsProvider).valueOrNull ?? const [];
+    final dateFormat = DateFormat('d.M.', 'de_DE');
+    final dateLabel = _dateRange == null
+        ? 'Beliebig'
+        : '${dateFormat.format(_dateRange!.start)} – ${dateFormat.format(_dateRange!.end)}';
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) => SafeArea(
+        child: ListView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(AppSpacing.screenPaddingMobile),
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Filter', style: Theme.of(context).textTheme.titleLarge),
+                TextButton(
+                  onPressed: _reset,
+                  child: const Text('Zurücksetzen'),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text('Datum', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.sm),
+            OutlinedButton.icon(
+              onPressed: _pickDateRange,
+              icon: const Icon(Icons.calendar_today_rounded, size: 18),
+              label: Text(dateLabel),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text('Genre', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final genre in genres)
+                  FilterChip(
+                    label: Text(genre.label),
+                    selected: _genreIds.contains(genre.id),
+                    onSelected: (selected) => setState(() {
+                      if (selected) {
+                        _genreIds.add(genre.id);
+                      } else {
+                        _genreIds.remove(genre.id);
+                      }
+                    }),
+                    showCheckmark: false,
+                    selectedColor: colors.accentPrimary.withValues(alpha: 0.16),
+                    labelStyle: TextStyle(
+                      color: _genreIds.contains(genre.id)
+                          ? colors.accentPrimary
+                          : colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text('Preis', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final entry in _priceLabels.entries)
+                  ChoiceChip(
+                    label: Text(entry.value),
+                    selected: _maxPrice == entry.key,
+                    onSelected: (_) => setState(() => _maxPrice = entry.key),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Barrierefrei'),
+              value: _accessibleOnly,
+              activeThumbColor: colors.accentPrimary,
+              onChanged: (v) => setState(() => _accessibleOnly = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Open Air'),
+              value: _openAirOnly,
+              activeThumbColor: colors.accentPrimary,
+              onChanged: (v) => setState(() => _openAirOnly = v),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _apply,
+                child: const Text('Filter anwenden'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
