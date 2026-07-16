@@ -27,6 +27,12 @@ const _rows = [
     title: 'Erinnerung am Vortag',
     subtitle: 'Für favorisierte Veranstaltungen, die morgen stattfinden',
   ),
+  (
+    key: NotificationPreferenceKey.followedEnsembleNewEvent,
+    title: 'Neue Termine gefolgter Ensembles',
+    subtitle:
+        'Wenn ein Ensemble oder eine Person, die dich interessiert, eine neue Veranstaltung ankündigt',
+  ),
 ];
 
 class NotificationSettingsScreen extends ConsumerWidget {
