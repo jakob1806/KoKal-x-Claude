@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/external_maps.dart';
+import '../../../core/widgets/detail_hero_background.dart';
+import '../../../core/widgets/external_links_row.dart';
 import '../../../core/widgets/genre_artwork.dart';
 
 final _venueProvider = FutureProvider.family<Map<String, dynamic>?, String>((
@@ -75,21 +77,9 @@ class VenueDetailScreen extends ConsumerWidget {
                 backgroundColor: colors.backgroundPrimary,
                 iconTheme: const IconThemeData(color: Colors.white),
                 flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      const GenreArtwork(genre: EventGenre.kirchenmusik),
-                      Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Color(0xBF000000)],
-                            stops: [0.5, 1.0],
-                          ),
-                        ),
-                      ),
-                    ],
+                  background: DetailHeroBackground(
+                    photoUrl: venue['photo_url'] as String?,
+                    fallbackGenre: EventGenre.kirchenmusik,
                   ),
                 ),
               ),
@@ -151,6 +141,10 @@ class VenueDetailScreen extends ConsumerWidget {
                         ),
                       ),
                     ],
+                    const SizedBox(height: AppSpacing.md),
+                    ExternalLinksRow(
+                      websiteUrl: venue['website_url'] as String?,
+                    ),
                     if (venue['parking_info_de'] != null) ...[
                       const SizedBox(height: AppSpacing.lg),
                       Text(

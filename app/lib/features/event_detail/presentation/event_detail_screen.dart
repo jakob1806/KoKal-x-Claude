@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/calendar/ics_export.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/detail_hero_background.dart';
 import '../../../core/widgets/event_section.dart';
 import '../../../core/widgets/favorite_button.dart';
 import '../../../core/widgets/genre_artwork.dart';
@@ -25,7 +26,7 @@ final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
         id, slug, title, subtitle, description_de,
         start_datetime, duration_minutes, has_intermission,
         ticket_url, price_min, price_max, price_currency, is_free,
-        website_url, accessibility, status,
+        website_url, accessibility, status, image_urls,
         venues(id, slug, name, address_street, address_zip, address_city),
         organizers(name),
         event_genres(genres(id, slug, label_de)),
@@ -153,6 +154,10 @@ class EventDetailScreen extends ConsumerWidget {
           final accessibility =
               (event['accessibility'] as Map<String, dynamic>?) ?? {};
           final statusBadge = _statusLabel[event['status']];
+          final imageUrls = event['image_urls'] as List?;
+          final photoUrl = (imageUrls != null && imageUrls.isNotEmpty)
+              ? imageUrls.first as String?
+              : null;
 
           return Stack(
             children: [
@@ -208,7 +213,11 @@ class EventDetailScreen extends ConsumerWidget {
                       background: Stack(
                         fit: StackFit.expand,
                         children: [
-                          GenreArtwork(genre: primaryGenre),
+                          DetailHeroBackground(
+                            photoUrl: photoUrl,
+                            fallbackGenre: primaryGenre,
+                            showGradient: false,
+                          ),
                           Container(
                             decoration: const BoxDecoration(
                               gradient: LinearGradient(

@@ -5,7 +5,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/detail_hero_background.dart';
+import '../../../core/widgets/external_links_row.dart';
 import '../../../core/widgets/genre_artwork.dart';
+import '../../../core/widgets/past_events_expansion.dart';
 
 final _ensembleProvider = FutureProvider.family<Map<String, dynamic>?, String>((
   ref,
@@ -63,6 +66,12 @@ class EnsembleDetailScreen extends ConsumerWidget {
             );
             return start != null && start.isAfter(now);
           }).toList();
+          final past = events.where((row) {
+            final start = DateTime.tryParse(
+              row['events']?['start_datetime'] ?? '',
+            );
+            return start != null && start.isBefore(now);
+          }).toList();
 
           return CustomScrollView(
             slivers: [
@@ -72,21 +81,9 @@ class EnsembleDetailScreen extends ConsumerWidget {
                 backgroundColor: colors.backgroundPrimary,
                 iconTheme: const IconThemeData(color: Colors.white),
                 flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      const GenreArtwork(genre: EventGenre.orchester),
-                      Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Color(0xBF000000)],
-                            stops: [0.5, 1.0],
-                          ),
-                        ),
-                      ),
-                    ],
+                  background: DetailHeroBackground(
+                    photoUrl: ensemble['photo_url'] as String?,
+                    fallbackGenre: EventGenre.orchester,
                   ),
                 ),
               ),
@@ -109,6 +106,8 @@ class EnsembleDetailScreen extends ConsumerWidget {
                         _typeLabel[ensemble['type']] ?? ensemble['type'],
                         if (ensemble['founded_year'] != null)
                           'seit ${ensemble['founded_year']}',
+                        if (ensemble['member_count'] != null)
+                          '${ensemble['member_count']} Mitglieder',
                         if (ensemble['home_venue']?['name'] != null)
                           ensemble['home_venue']['name'],
                       ].join(' · '),
@@ -128,6 +127,12 @@ class EnsembleDetailScreen extends ConsumerWidget {
                         ),
                       ),
                     ],
+                    const SizedBox(height: AppSpacing.md),
+                    ExternalLinksRow(
+                      websiteUrl: ensemble['website_url'] as String?,
+                      socialLinks:
+                          ensemble['social_links'] as Map<String, dynamic>?,
+                    ),
                     const SizedBox(height: AppSpacing.xxl),
                     Text(
                       'Kommende Veranstaltungen',
@@ -145,6 +150,15 @@ class EnsembleDetailScreen extends ConsumerWidget {
                     else
                       for (final row in upcoming)
                         _EnsembleEventRow(row: row, colors: colors),
+                    if (past.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      PastEventsExpansion(
+                        rows: [
+                          for (final row in past)
+                            _EnsembleEventRow(row: row, colors: colors),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
