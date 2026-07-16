@@ -15,11 +15,60 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { parseIcal } from "./parsers/ical.ts";
 import { parseRss } from "./parsers/rss.ts";
+import { parseScrape } from "./parsers/scrape.ts";
 import { parseSchemaOrg } from "./parsers/schema_org.ts";
 import type { ParseResult } from "./types.ts";
 import { upsertRawEvent } from "./write.ts";
 
-const SUPPORTED_TYPES = new Set(["schema_org", "ical", "rss"]);
+const SUPPORTED_TYPES = new Set(["schema_org", "ical", "rss", "scrape"]);
+
+// Identifiziert diese App als Absender statt einen echten Browser
+// vorzutäuschen — Mindest-Transparenz für den scrape-Quellentyp (siehe
+// parsers/scrape.ts für den vollen Kontext zu dieser Produktentscheidung).
+const USER_AGENT = "KlassikMuenchenBot/1.0 (+event discovery app; contact via source venue)";
+
+/** Bestes-Bemühen robots.txt-Check: nur "Disallow"-Präfixe unter
+ * "User-agent: *", keine Wildcards/Regex-Muster, kein Crawl-Delay. Deckt den
+ * Normalfall ab; bei Fetch-Fehler wird konservativ NICHT blockiert (fehlende
+ * robots.txt heißt "alles erlaubt"), aber ein echter Fund einer verbotenen
+ * Regel blockiert zuverlässig. */
+async function isAllowedByRobots(targetUrl: string): Promise<boolean> {
+  let robotsUrl: string;
+  let path: string;
+  try {
+    const u = new URL(targetUrl);
+    robotsUrl = `${u.origin}/robots.txt`;
+    path = u.pathname || "/";
+  } catch {
+    return true;
+  }
+
+  let text: string;
+  try {
+    const res = await fetch(robotsUrl, { headers: { "User-Agent": USER_AGENT } });
+    if (!res.ok) return true;
+    text = await res.text();
+  } catch {
+    return true;
+  }
+
+  let inWildcardGroup = false;
+  const disallows: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.split("#")[0].trim();
+    if (!line) continue;
+    const [field, ...rest] = line.split(":");
+    const value = rest.join(":").trim();
+    const key = field.trim().toLowerCase();
+    if (key === "user-agent") {
+      inWildcardGroup = value === "*";
+    } else if (key === "disallow" && inWildcardGroup && value) {
+      disallows.push(value);
+    }
+  }
+
+  return !disallows.some((rule) => path.startsWith(rule));
+}
 
 Deno.serve(async (req) => {
   let body: { source_id?: unknown };
@@ -41,7 +90,7 @@ Deno.serve(async (req) => {
 
   const { data: source, error: sourceError } = await supabase
     .from("sources")
-    .select("id, name, type, url, venue_id")
+    .select("id, name, type, url, venue_id, config")
     .eq("id", sourceId)
     .maybeSingle();
 
@@ -67,15 +116,25 @@ Deno.serve(async (req) => {
 
   if (!SUPPORTED_TYPES.has(source.type)) {
     const message =
-      `ingestion type '${source.type}' is not supported by the automatic worker (manual/api/scrape require separate handling)`;
+      `ingestion type '${source.type}' is not supported by the automatic worker (manual/api require separate handling)`;
     await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
     await touchSource(supabase, source.id, false);
     return jsonResponse({ status: "failed", error: message }, 422);
   }
 
+  if (source.type === "scrape") {
+    const allowed = await isAllowedByRobots(source.url);
+    if (!allowed) {
+      const message = `robots.txt disallows fetching ${source.url} — refusing to scrape`;
+      await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
+      await touchSource(supabase, source.id, false);
+      return jsonResponse({ status: "failed", error: message }, 403);
+    }
+  }
+
   let responseBody: string;
   try {
-    const res = await fetch(source.url);
+    const res = await fetch(source.url, { headers: { "User-Agent": USER_AGENT } });
     if (!res.ok) {
       const message = `fetch failed: HTTP ${res.status} ${res.statusText}`;
       await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
@@ -101,6 +160,9 @@ Deno.serve(async (req) => {
         break;
       case "rss":
         parsed = await parseRss(responseBody);
+        break;
+      case "scrape":
+        parsed = parseScrape(responseBody, source.config);
         break;
       default:
         // Unreachable given the SUPPORTED_TYPES guard above, but keeps the
