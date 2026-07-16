@@ -27,43 +27,10 @@ class _CalendarSyncSheetState extends ConsumerState<CalendarSyncSheet> {
 
   Future<void> _syncToDeviceCalendar(List<SyncableEvent> events) async {
     setState(() => _busy = true);
-    final result = await CalendarSyncService.syncEvents([
-      for (final e in events)
-        CalendarSyncEvent(
-          title: e.title,
-          start: e.start,
-          end: e.end,
-          description: e.description,
-          location: e.location,
-          url: e.url,
-        ),
-    ]);
-    if (!mounted) return;
-    setState(() => _busy = false);
-
-    final message = switch (result.outcome) {
-      CalendarSyncOutcome.success =>
-        '${result.syncedCount} Veranstaltung${result.syncedCount == 1 ? '' : 'en'} synchronisiert.',
-      CalendarSyncOutcome.permissionDenied =>
-        'Kalenderzugriff verweigert. Bitte in den Systemeinstellungen erlauben.',
-      CalendarSyncOutcome.error =>
-        'Synchronisierung fehlgeschlagen${result.message != null ? ': ${result.message}' : '.'}',
-    };
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-    if (result.outcome == CalendarSyncOutcome.success) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  Future<void> _exportIcs(List<SyncableEvent> events) async {
-    setState(() => _busy = true);
-    await IcsExport.shareMultiple(
-      events: [
+    try {
+      final result = await CalendarSyncService.syncEvents([
         for (final e in events)
-          IcsEventInput(
-            uid: e.id,
+          CalendarSyncEvent(
             title: e.title,
             start: e.start,
             end: e.end,
@@ -71,13 +38,63 @@ class _CalendarSyncSheetState extends ConsumerState<CalendarSyncSheet> {
             location: e.location,
             url: e.url,
           ),
-      ],
-      fileName: 'klassik-muenchen-favoriten.ics',
-      subject: 'Meine Klassik München Favoriten',
-    );
-    if (!mounted) return;
-    setState(() => _busy = false);
-    Navigator.of(context).pop();
+      ]);
+      if (!mounted) return;
+
+      final message = switch (result.outcome) {
+        CalendarSyncOutcome.success =>
+          '${result.syncedCount} Veranstaltung${result.syncedCount == 1 ? '' : 'en'} synchronisiert.'
+              '${result.message != null ? ' ${result.message}' : ''}',
+        CalendarSyncOutcome.permissionDenied =>
+          'Kalenderzugriff verweigert. Bitte in den Systemeinstellungen erlauben.',
+        CalendarSyncOutcome.error =>
+          'Synchronisierung fehlgeschlagen${result.message != null ? ': ${result.message}' : '.'}',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      if (result.outcome == CalendarSyncOutcome.success) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Synchronisierung fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _exportIcs(List<SyncableEvent> events) async {
+    setState(() => _busy = true);
+    try {
+      await IcsExport.shareMultiple(
+        events: [
+          for (final e in events)
+            IcsEventInput(
+              uid: e.id,
+              title: e.title,
+              start: e.start,
+              end: e.end,
+              description: e.description,
+              location: e.location,
+              url: e.url,
+            ),
+        ],
+        fileName: 'klassik-muenchen-favoriten.ics',
+        subject: 'Meine Klassik München Favoriten',
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export fehlgeschlagen: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override

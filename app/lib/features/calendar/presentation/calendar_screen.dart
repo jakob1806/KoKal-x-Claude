@@ -33,7 +33,27 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final colors = context.appColors;
     final monthKey = MonthKey(_focusedDay.year, _focusedDay.month);
     final monthAsync = ref.watch(monthEventsProvider(monthKey));
-    final eventsByDay = monthAsync.valueOrNull ?? const {};
+    final eventsByDay = <DateTime, List<HomeEventItem>>{
+      ...monthAsync.valueOrNull ?? const {},
+    };
+    // Woche-Format zeigt table_calendar zufolge die Mon-So-Woche um
+    // _focusedDay — die kann in den vorigen/nächsten Monat hineinragen,
+    // dessen Events monthEventsProvider (nur _focusedDay's Monat) nicht
+    // enthält. Fehlender Monat wird bei Bedarf zusätzlich geladen.
+    if (_mode == _CalendarViewMode.week) {
+      final weekStart = _focusedDay.subtract(
+        Duration(days: _focusedDay.weekday - 1),
+      );
+      final weekEnd = weekStart.add(const Duration(days: 6));
+      for (final edge in [weekStart, weekEnd]) {
+        if (edge.month != _focusedDay.month || edge.year != _focusedDay.year) {
+          final edgeAsync = ref.watch(
+            monthEventsProvider(MonthKey(edge.year, edge.month)),
+          );
+          eventsByDay.addAll(edgeAsync.valueOrNull ?? const {});
+        }
+      }
+    }
     final dayAgenda = eventsByDay[_dayKey(_selectedDay)] ?? const [];
 
     return SafeArea(
@@ -289,6 +309,8 @@ class _EventTile extends StatelessWidget {
       ),
       title: Text(
         event.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontWeight: FontWeight.w700,
           color: colors.textPrimary,
@@ -296,6 +318,8 @@ class _EventTile extends StatelessWidget {
       ),
       subtitle: Text(
         event.venueAndTime,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
       ),
       trailing: FavoriteButton(eventId: event.id, size: 20),
