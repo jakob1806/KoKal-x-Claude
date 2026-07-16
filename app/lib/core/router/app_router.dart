@@ -7,6 +7,7 @@ import '../../features/favorites/presentation/favorites_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/interests/presentation/interests_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
+import '../../features/notifications/presentation/notification_settings_screen.dart';
 import '../../features/persons/presentation/ensemble_detail_screen.dart';
 import '../../features/persons/presentation/person_detail_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
@@ -101,6 +102,11 @@ final appRouter = GoRouter(
       path: '/interests',
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) => const InterestsScreen(),
+    ),
+    GoRoute(
+      path: '/notification-settings',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const NotificationSettingsScreen(),
     ),
   ],
 );

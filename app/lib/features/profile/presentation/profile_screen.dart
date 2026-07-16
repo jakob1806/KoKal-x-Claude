@@ -40,16 +40,22 @@ class ProfileScreen extends ConsumerWidget {
             colors: colors,
             onTap: () => context.push('/interests'),
           ),
-          for (final row in const ['Meine Listen', 'Benachrichtigungen'])
-            _ProfileRow(
-              label: row,
-              colors: colors,
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('„$row" folgt in einer der nächsten Phasen.'),
+          _ProfileRow(
+            label: 'Benachrichtigungen',
+            colors: colors,
+            onTap: () => context.push('/notification-settings'),
+          ),
+          _ProfileRow(
+            label: 'Meine Listen',
+            colors: colors,
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  '„Meine Listen" folgt in einer der nächsten Phasen.',
                 ),
               ),
             ),
+          ),
           _ProfileRow(
             label: 'Darstellung',
             colors: colors,
