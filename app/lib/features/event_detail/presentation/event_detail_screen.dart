@@ -8,8 +8,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/calendar/ics_export.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/event_section.dart';
 import '../../../core/widgets/favorite_button.dart';
 import '../../../core/widgets/genre_artwork.dart';
+import '../../home/application/home_providers.dart';
 
 final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
   ref,
@@ -22,9 +24,9 @@ final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
         start_datetime, duration_minutes, has_intermission,
         ticket_url, price_min, price_max, price_currency, is_free,
         website_url, accessibility, status,
-        venues(slug, name, address_street, address_zip, address_city),
+        venues(id, slug, name, address_street, address_zip, address_city),
         organizers(name),
-        event_genres(genres(slug, label_de)),
+        event_genres(genres(id, slug, label_de)),
         event_works(position, after_intermission, works(title, catalog_number, composer:persons(full_name))),
         event_participants(role, persons(slug, full_name), ensembles(slug, name))
       ''')
@@ -32,6 +34,32 @@ final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
       .neq('status', 'draft')
       .maybeSingle();
 });
+
+typedef _SimilarEventsKey = ({
+  String eventId,
+  String? genreId,
+  String? venueId,
+});
+
+final _similarEventsProvider =
+    FutureProvider.family<List<HomeEventItem>, _SimilarEventsKey>((
+      ref,
+      key,
+    ) async {
+      if (key.genreId == null && key.venueId == null) return [];
+
+      final rows = await Supabase.instance.client.rpc(
+        'similar_events',
+        params: {
+          'p_event_id': key.eventId,
+          'p_genre_id': key.genreId,
+          'p_venue_id': key.venueId,
+        },
+      );
+      return (rows as List)
+          .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
+          .toList();
+    });
 
 const _statusLabel = {
   'scheduled': null,
@@ -83,9 +111,24 @@ class EventDetailScreen extends ConsumerWidget {
               .map((g) => g['genres']?['label_de'] as String?)
               .whereType<String>()
               .toList();
+          final primaryGenreId = (event['event_genres'] as List)
+              .map((g) => g['genres']?['id'] as String?)
+              .whereType<String>()
+              .firstOrNull;
 
           final start = DateTime.tryParse(event['start_datetime'] ?? '');
           final venue = event['venues'] as Map<String, dynamic>?;
+          final similarEvents =
+              ref
+                  .watch(
+                    _similarEventsProvider((
+                      eventId: event['id'] as String,
+                      genreId: primaryGenreId,
+                      venueId: venue?['id'] as String?,
+                    )),
+                  )
+                  .valueOrNull ??
+              const [];
           final works = (event['event_works'] as List)
             ..sort(
               (a, b) => (a['position'] as int).compareTo(b['position'] as int),
@@ -196,7 +239,7 @@ class EventDetailScreen extends ConsumerWidget {
                       AppSpacing.screenPaddingMobile,
                       AppSpacing.lg,
                       AppSpacing.screenPaddingMobile,
-                      AppSpacing.huge,
+                      0,
                     ),
                     sliver: SliverList.list(
                       children: [
@@ -329,6 +372,19 @@ class EventDetailScreen extends ConsumerWidget {
                         ],
                       ],
                     ),
+                  ),
+                  if (similarEvents.isNotEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.only(top: AppSpacing.xl),
+                      sliver: SliverToBoxAdapter(
+                        child: EventSection(
+                          title: 'Ähnliche Veranstaltungen',
+                          events: similarEvents,
+                        ),
+                      ),
+                    ),
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: AppSpacing.huge),
                   ),
                 ],
               ),

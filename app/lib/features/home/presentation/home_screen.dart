@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
-import '../../../core/widgets/event_card.dart';
+import '../../../core/widgets/event_section.dart';
 import '../../../core/widgets/genre_artwork.dart';
 import '../application/home_providers.dart';
 
@@ -96,25 +96,28 @@ class HomeScreen extends ConsumerWidget {
                   sliver: SliverList.list(
                     children: [
                       if (data.heute.isNotEmpty) ...[
-                        _Section(title: 'Heute in München', events: data.heute),
+                        EventSection(
+                          title: 'Heute in München',
+                          events: data.heute,
+                        ),
                         const SizedBox(height: AppSpacing.sectionGap),
                       ],
                       if (data.ausverkauft.isNotEmpty) ...[
-                        _Section(
+                        EventSection(
                           title: 'Demnächst ausverkauft',
                           events: data.ausverkauft,
                         ),
                         const SizedBox(height: AppSpacing.sectionGap),
                       ],
                       if (data.kostenlos.isNotEmpty) ...[
-                        _Section(
+                        EventSection(
                           title: 'Kostenlose Konzerte',
                           events: data.kostenlos,
                         ),
                         const SizedBox(height: AppSpacing.sectionGap),
                       ],
                       if (data.neu.isNotEmpty)
-                        _Section(
+                        EventSection(
                           title: 'Neue Veranstaltungen',
                           events: data.neu,
                         ),
@@ -238,51 +241,6 @@ class _Hero extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.events});
-  final String title;
-  final List<HomeEventItem> events;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.screenPaddingMobile,
-          ),
-          child: Text(title, style: Theme.of(context).textTheme.headlineSmall),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        SizedBox(
-          height: 148,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.screenPaddingMobile,
-            ),
-            itemCount: events.length,
-            separatorBuilder: (_, __) =>
-                const SizedBox(width: AppSpacing.cardGap),
-            itemBuilder: (context, i) {
-              final e = events[i];
-              return EventCard(
-                eventId: e.id,
-                title: e.title,
-                venueAndTime: e.venueAndTime,
-                genre: e.genre,
-                badgeLabel: e.badge,
-                onTap: () => context.push('/event/${e.slug}'),
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 }
