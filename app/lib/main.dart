@@ -26,15 +26,28 @@ Future<void> main() async {
       url: Env.supabaseUrl,
       publishableKey: Env.supabaseAnonKey,
     );
+
+    // Jede Session braucht einen profiles-Datensatz — Favoriten, Interessen
+    // und Benachrichtigungseinstellungen hängen alle an user_id, was ohne
+    // irgendeine Session (auch ohne echten Login) nie der Fall wäre. Scheitert
+    // das offline beim allerersten Start, bleibt die App nutzbar, nur ohne
+    // Personalisierung bis zum nächsten Start mit Netz.
+    if (Supabase.instance.client.auth.currentUser == null) {
+      try {
+        await Supabase.instance.client.auth.signInAnonymously();
+      } catch (_) {}
+    }
   }
 
-  // Wiederkehrende, bereits eingeloggte Nutzer bekommen Push direkt beim
-  // Start registriert. Erstanmeldung stößt das stattdessen über den
+  // Wiederkehrende, bereits *echt* eingeloggte Nutzer bekommen Push direkt
+  // beim Start registriert. Erstanmeldung stößt das stattdessen über den
   // Auth-State-Listener in KlassikMuenchenApp an, sobald der Login
   // tatsächlich abgeschlossen ist (relevant v.a. für OAuth, das über einen
-  // externen Browser läuft und nicht synchron zurückkehrt) — Berechtigung
-  // wird bewusst nicht vor dem ersten Login abgefragt.
-  if (Supabase.instance.client.auth.currentUser != null) {
+  // externen Browser läuft und nicht synchron zurückkehrt); die anonyme
+  // Bootstrap-Session oben triggert das bewusst nicht — Berechtigung wird
+  // erst im Onboarding-Flow bzw. beim ersten echten Login abgefragt.
+  final startupUser = Supabase.instance.client.auth.currentUser;
+  if (startupUser != null && !startupUser.isAnonymous) {
     unawaited(PushService.initialize());
   }
 

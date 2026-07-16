@@ -17,6 +17,10 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
     final user = ref.watch(currentUserProvider);
+    // isAnonymous: die Bootstrap-Session aus main.dart zählt hier nicht als
+    // "angemeldet" — sonst sähe jeder Neuinstall sofort wie eingeloggt aus,
+    // ohne dass je eine E-Mail oder Apple/Google-Login stattgefunden hätte.
+    final isSignedIn = user != null && !user.isAnonymous;
 
     return SafeArea(
       child: ListView(
@@ -25,7 +29,7 @@ class ProfileScreen extends ConsumerWidget {
           vertical: AppSpacing.xl,
         ),
         children: [
-          if (user == null)
+          if (!isSignedIn)
             const AuthSection()
           else
             _SignedInHeader(email: user.email ?? 'Angemeldet', colors: colors),
