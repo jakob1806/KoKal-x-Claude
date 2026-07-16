@@ -71,6 +71,8 @@ class HomeData {
   const HomeData({
     required this.hero,
     required this.heute,
+    required this.empfehlungen,
+    required this.beliebt,
     required this.neu,
     required this.kostenlos,
     required this.ausverkauft,
@@ -78,6 +80,8 @@ class HomeData {
 
   final Map<String, dynamic>? hero;
   final List<HomeEventItem> heute;
+  final List<HomeEventItem> empfehlungen;
+  final List<HomeEventItem> beliebt;
   final List<HomeEventItem> neu;
   final List<HomeEventItem> kostenlos;
   final List<HomeEventItem> ausverkauft;
@@ -90,7 +94,7 @@ final homeDataProvider = FutureProvider.autoDispose<HomeData>((ref) async {
   final todayEnd = todayStart.add(const Duration(days: 1));
   final nowIso = now.toIso8601String();
 
-  final results = await Future.wait([
+  final results = await Future.wait<dynamic>([
     client
         .from('events')
         .select(_homeEventColumns)
@@ -105,6 +109,12 @@ final homeDataProvider = FutureProvider.autoDispose<HomeData>((ref) async {
         .gte('start_datetime', todayStart.toIso8601String())
         .lt('start_datetime', todayEnd.toIso8601String())
         .order('start_datetime'),
+    // Regelbasierte Empfehlungen (docs/06-mvp-plan.md,
+    // "MVP-Empfehlungslogik") — degradiert für anonyme/interesselose
+    // Nutzer serverseitig automatisch zu Popularität + zeitlicher Nähe,
+    // kein Sonderfall hier im Client nötig.
+    client.rpc('recommended_events', params: {'p_result_limit': 10}),
+    client.rpc('popular_events', params: {'p_result_limit': 10}),
     client
         .from('events')
         .select(_homeEventColumns)
@@ -136,13 +146,19 @@ final homeDataProvider = FutureProvider.autoDispose<HomeData>((ref) async {
     heute: (results[1] as List)
         .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
         .toList(),
-    neu: (results[2] as List)
+    empfehlungen: (results[2] as List)
         .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
         .toList(),
-    kostenlos: (results[3] as List)
+    beliebt: (results[3] as List)
         .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
         .toList(),
-    ausverkauft: (results[4] as List)
+    neu: (results[4] as List)
+        .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
+        .toList(),
+    kostenlos: (results[5] as List)
+        .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
+        .toList(),
+    ausverkauft: (results[6] as List)
         .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
         .toList(),
   );

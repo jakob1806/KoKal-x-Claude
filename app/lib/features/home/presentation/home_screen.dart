@@ -102,6 +102,20 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: AppSpacing.sectionGap),
                       ],
+                      if (data.beliebt.isNotEmpty) ...[
+                        EventSection(
+                          title: 'Beliebte Veranstaltungen',
+                          events: data.beliebt,
+                        ),
+                        const SizedBox(height: AppSpacing.sectionGap),
+                      ],
+                      if (data.empfehlungen.isNotEmpty) ...[
+                        EventSection(
+                          title: 'Empfehlungen für dich',
+                          events: data.empfehlungen,
+                        ),
+                        const SizedBox(height: AppSpacing.sectionGap),
+                      ],
                       if (data.ausverkauft.isNotEmpty) ...[
                         EventSection(
                           title: 'Demnächst ausverkauft',
@@ -122,6 +136,8 @@ class HomeScreen extends ConsumerWidget {
                           events: data.neu,
                         ),
                       if (data.heute.isEmpty &&
+                          data.beliebt.isEmpty &&
+                          data.empfehlungen.isEmpty &&
                           data.ausverkauft.isEmpty &&
                           data.kostenlos.isEmpty &&
                           data.neu.isEmpty)
