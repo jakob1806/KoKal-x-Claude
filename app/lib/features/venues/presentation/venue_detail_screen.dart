@@ -60,6 +60,8 @@ class VenueDetailScreen extends ConsumerWidget {
           final venue = data['venue'] as Map<String, dynamic>;
           final events = data['events'] as List;
           final latLng = data['latLng'] as Map<String, dynamic>?;
+          final accessibility =
+              (venue['accessibility'] as Map<String, dynamic>?) ?? {};
           final now = DateTime.now();
           final upcoming = events.where((e) {
             final start = DateTime.tryParse(e['start_datetime'] ?? '');
@@ -145,6 +147,25 @@ class VenueDetailScreen extends ConsumerWidget {
                     ExternalLinksRow(
                       websiteUrl: venue['website_url'] as String?,
                     ),
+                    if (accessibility.values.any((v) => v == true)) ...[
+                      const SizedBox(height: AppSpacing.xl),
+                      Text(
+                        'Barrierefreiheit',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          if (accessibility['wheelchair'] == true)
+                            const Chip(label: Text('Rollstuhlgerecht')),
+                          if (accessibility['hearing_loop'] == true)
+                            const Chip(label: Text('Induktionsschleife')),
+                          if (accessibility['sign_language'] == true)
+                            const Chip(label: Text('Gebärdensprache')),
+                        ],
+                      ),
+                    ],
                     if (venue['parking_info_de'] != null) ...[
                       const SizedBox(height: AppSpacing.lg),
                       Text(

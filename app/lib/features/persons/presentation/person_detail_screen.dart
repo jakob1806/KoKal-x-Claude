@@ -59,12 +59,17 @@ class PersonDetailScreen extends ConsumerWidget {
             );
             return start != null && start.isAfter(now);
           }).toList();
-          final past = events.where((row) {
-            final start = DateTime.tryParse(
-              row['events']?['start_datetime'] ?? '',
-            );
-            return start != null && start.isBefore(now);
-          }).toList();
+          final past = events
+              .where((row) {
+                final start = DateTime.tryParse(
+                  row['events']?['start_datetime'] ?? '',
+                );
+                return start != null && start.isBefore(now);
+              })
+              .toList()
+              .reversed // jüngste zuerst statt älteste zuerst
+              .take(20)
+              .toList();
 
           return CustomScrollView(
             slivers: [

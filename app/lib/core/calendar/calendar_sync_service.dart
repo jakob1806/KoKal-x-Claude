@@ -52,6 +52,14 @@ class CalendarSyncService {
     }
 
     final calendarsResult = await plugin.retrieveCalendars();
+    if (!calendarsResult.isSuccess) {
+      return CalendarSyncResult(
+        CalendarSyncOutcome.error,
+        0,
+        'Kalenderliste konnte nicht gelesen werden: '
+        '${calendarsResult.errors.map((e) => e.errorMessage).join('; ')}',
+      );
+    }
     Calendar? calendar;
     for (final c in calendarsResult.data ?? const <Calendar>[]) {
       if (c.name == _calendarName && c.isReadOnly != true) {
@@ -78,14 +86,32 @@ class CalendarSyncService {
       calendar.id,
       RetrieveEventsParams(startDate: DateTime(2000), endDate: DateTime(2100)),
     );
+    if (!existing.isSuccess) {
+      return CalendarSyncResult(
+        CalendarSyncOutcome.error,
+        0,
+        'Bestehende Kalendereinträge konnten nicht gelesen werden — '
+        'Abbruch, um keine Duplikate zu erzeugen: '
+        '${existing.errors.map((e) => e.errorMessage).join('; ')}',
+      );
+    }
     for (final e in existing.data ?? const <Event>[]) {
-      if (e.eventId != null) {
-        await plugin.deleteEvent(calendar.id, e.eventId);
+      if (e.eventId == null) continue;
+      final deleted = await plugin.deleteEvent(calendar.id, e.eventId);
+      if (!deleted.isSuccess) {
+        return CalendarSyncResult(
+          CalendarSyncOutcome.error,
+          0,
+          'Alter Kalendereintrag konnte nicht entfernt werden — Abbruch, '
+          'um keine Duplikate zu erzeugen: '
+          '${deleted.errors.map((e) => e.errorMessage).join('; ')}',
+        );
       }
     }
 
     final berlin = getLocation('Europe/Berlin');
     var synced = 0;
+    var failed = 0;
     for (final e in events) {
       final result = await plugin.createOrUpdateEvent(
         Event(
@@ -98,14 +124,27 @@ class CalendarSyncService {
           url: e.url != null ? Uri.tryParse(e.url!) : null,
         ),
       );
-      if (result?.isSuccess ?? false) synced++;
+      if (result?.isSuccess ?? false) {
+        synced++;
+      } else {
+        failed++;
+      }
+    }
+
+    if (synced == 0 && events.isNotEmpty) {
+      return const CalendarSyncResult(
+        CalendarSyncOutcome.error,
+        0,
+        'Keine Veranstaltung konnte eingetragen werden.',
+      );
     }
 
     return CalendarSyncResult(
-      synced > 0 || events.isEmpty
-          ? CalendarSyncOutcome.success
-          : CalendarSyncOutcome.error,
+      CalendarSyncOutcome.success,
       synced,
+      failed > 0
+          ? '$failed Veranstaltung(en) konnten nicht eingetragen werden.'
+          : null,
     );
   }
 }
