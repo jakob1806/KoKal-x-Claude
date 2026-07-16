@@ -58,6 +58,19 @@ final _searchHistoryProvider = FutureProvider.autoDispose<List<String>>((
   return seen.take(6).toList();
 });
 
+/// Läuft über eine SECURITY DEFINER-RPC statt einer View, weil
+/// search_history RLS auf auth.uid() = user_id hat — eine normale Abfrage
+/// würde nur die eigene Historie aggregieren, nicht die aller Nutzer.
+final _trendingSearchesProvider = FutureProvider.autoDispose<List<String>>((
+  ref,
+) async {
+  final rows = await Supabase.instance.client.rpc(
+    'trending_searches',
+    params: {'p_result_limit': 6},
+  );
+  return (rows as List).map((r) => r['query'] as String).toList();
+});
+
 const _typeLabel = {
   'event': 'Veranstaltungen',
   'person': 'Personen',
@@ -338,7 +351,9 @@ class _EmptyState extends ConsumerWidget {
   final AppColorsExtension colors;
   final ValueChanged<String> onSelect;
 
-  static const _suggestions = [
+  // Fallback, solange trending_searches() mangels echter Nutzung noch
+  // nichts liefert — sobald genug Suchvolumen da ist, gewinnt das Echte.
+  static const _fallbackSuggestions = [
     'Bach',
     'Kirchenmusik',
     'Herkulessaal',
@@ -348,6 +363,9 @@ class _EmptyState extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final historyAsync = ref.watch(_searchHistoryProvider);
+    final trending =
+        ref.watch(_trendingSearchesProvider).valueOrNull ?? const [];
+    final suggestions = trending.isEmpty ? _fallbackSuggestions : trending;
 
     return ListView(
       children: [
@@ -389,7 +407,7 @@ class _EmptyState extends ConsumerWidget {
           orElse: () => const SizedBox.shrink(),
         ),
         Text(
-          'Vorschläge',
+          'Beliebte Suchen',
           style: Theme.of(
             context,
           ).textTheme.labelSmall?.copyWith(letterSpacing: 1),
@@ -398,7 +416,7 @@ class _EmptyState extends ConsumerWidget {
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _suggestions
+          children: suggestions
               .map(
                 (c) => ActionChip(label: Text(c), onPressed: () => onSelect(c)),
               )
