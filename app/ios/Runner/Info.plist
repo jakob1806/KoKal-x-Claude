@@ -62,5 +62,9 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Klassik München nutzt deinen Standort, um Veranstaltungen und Spielstätten in deiner Nähe zu zeigen.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Klassik München trägt favorisierte Veranstaltungen auf Wunsch in deinen Kalender ein.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Klassik München trägt favorisierte Veranstaltungen auf Wunsch in deinen Kalender ein.</string>
 </dict>
 </plist>

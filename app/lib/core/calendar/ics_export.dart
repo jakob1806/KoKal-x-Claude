@@ -3,10 +3,33 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Erzeugt eine .ics-Datei für ein einzelnes Event und öffnet das
-/// System-Teilen-Menü. iOS/Android bieten für `text/calendar`-Dateien
-/// dort direkt „Zum Kalender hinzufügen" an — kein eigener Kalender-Picker
-/// nötig (siehe docs/05-navigation-structure.md, „Kalender synchronisieren").
+class IcsEventInput {
+  const IcsEventInput({
+    required this.uid,
+    required this.title,
+    required this.start,
+    required this.end,
+    this.description,
+    this.location,
+    this.url,
+  });
+
+  final String uid;
+  final String title;
+  final DateTime start;
+  final DateTime end;
+  final String? description;
+  final String? location;
+  final String? url;
+}
+
+/// Erzeugt eine .ics-Datei und öffnet das System-Teilen-Menü. iOS/Android
+/// bieten für `text/calendar`-Dateien dort direkt „Zum Kalender hinzufügen"
+/// an — kein eigener Kalender-Picker nötig (siehe
+/// docs/05-navigation-structure.md, „Kalender synchronisieren"). Eine .ics
+/// mit mehreren VEVENT-Blöcken importieren beide Systeme als Sammel-Import
+/// ("Alle hinzufügen"), daher genügt [shareMultiple] auch für den
+/// Sync-Sheet-Bulk-Export der Favoriten.
 class IcsExport {
   const IcsExport._();
 
@@ -22,52 +45,61 @@ class IcsExport {
   }) async {
     final effectiveEnd =
         end ?? start.add(Duration(minutes: durationMinutes ?? 120));
-    final ics = _buildIcs(
-      uid: uid,
-      title: title,
-      description: description,
-      start: start,
-      end: effectiveEnd,
-      location: location,
-      url: url,
+    await shareMultiple(
+      events: [
+        IcsEventInput(
+          uid: uid,
+          title: title,
+          start: start,
+          end: effectiveEnd,
+          description: description,
+          location: location,
+          url: url,
+        ),
+      ],
+      fileName: 'event_$uid.ics',
+      subject: title,
     );
+  }
 
+  static Future<void> shareMultiple({
+    required List<IcsEventInput> events,
+    required String fileName,
+    String? subject,
+  }) async {
+    final ics = _buildIcs(events);
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/event_$uid.ics');
+    final file = File('${dir.path}/$fileName');
     await file.writeAsString(ics);
 
     await Share.shareXFiles([
       XFile(file.path, mimeType: 'text/calendar'),
-    ], subject: title);
+    ], subject: subject);
   }
 
-  static String _buildIcs({
-    required String uid,
-    required String title,
-    required DateTime start,
-    required DateTime end,
-    String? description,
-    String? location,
-    String? url,
-  }) {
+  static String _buildIcs(List<IcsEventInput> events) {
     final lines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
       'PRODID:-//Klassik München//DE',
-      'BEGIN:VEVENT',
-      'UID:$uid@klassikmuenchen.de',
-      'DTSTAMP:${_formatUtc(DateTime.now())}',
-      'DTSTART:${_formatUtc(start)}',
-      'DTEND:${_formatUtc(end)}',
-      'SUMMARY:${_escape(title)}',
-      if (description != null && description.isNotEmpty)
-        'DESCRIPTION:${_escape(description)}',
-      if (location != null && location.isNotEmpty)
-        'LOCATION:${_escape(location)}',
-      if (url != null && url.isNotEmpty) 'URL:$url',
-      'END:VEVENT',
-      'END:VCALENDAR',
     ];
+    for (final e in events) {
+      lines.addAll([
+        'BEGIN:VEVENT',
+        'UID:${e.uid}@klassikmuenchen.de',
+        'DTSTAMP:${_formatUtc(DateTime.now())}',
+        'DTSTART:${_formatUtc(e.start)}',
+        'DTEND:${_formatUtc(e.end)}',
+        'SUMMARY:${_escape(e.title)}',
+        if (e.description != null && e.description!.isNotEmpty)
+          'DESCRIPTION:${_escape(e.description!)}',
+        if (e.location != null && e.location!.isNotEmpty)
+          'LOCATION:${_escape(e.location!)}',
+        if (e.url != null && e.url!.isNotEmpty) 'URL:${e.url}',
+        'END:VEVENT',
+      ]);
+    }
+    lines.add('END:VCALENDAR');
     return lines.join('\r\n');
   }
 
