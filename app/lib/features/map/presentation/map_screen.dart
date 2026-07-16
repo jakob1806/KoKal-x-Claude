@@ -8,8 +8,11 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/events/event_filters.dart';
+import '../../../core/events/filtered_events_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/event_filter_sheet.dart';
 import '../application/map_providers.dart';
 
 class MapScreen extends ConsumerWidget {
@@ -21,7 +24,19 @@ class MapScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
     final venuesAsync = ref.watch(mapVenuesProvider);
-    final venues = venuesAsync.valueOrNull ?? const <MapVenue>[];
+    final filters = ref.watch(eventFiltersProvider);
+    final allVenues = venuesAsync.valueOrNull ?? const <MapVenue>[];
+
+    final filteredEventsAsync = filters.isActive
+        ? ref.watch(filteredEventsProvider)
+        : null;
+    final matchingVenueIds = filteredEventsAsync?.valueOrNull
+        ?.map((e) => e.venueId)
+        .whereType<String>()
+        .toSet();
+    final venues = matchingVenueIds == null
+        ? allVenues
+        : allVenues.where((v) => matchingVenueIds.contains(v.id)).toList();
     final venueById = {for (final v in venues) v.id: v};
 
     return Stack(
@@ -84,13 +99,28 @@ class MapScreen extends ConsumerWidget {
             right: 0,
             child: Center(child: CircularProgressIndicator()),
           ),
-        if (venuesAsync.hasError)
-          Positioned(
-            top: AppSpacing.md,
-            left: AppSpacing.screenPaddingMobile,
-            right: AppSpacing.screenPaddingMobile,
-            child: _ErrorBanner(message: '${venuesAsync.error}'),
+        Positioned(
+          top: AppSpacing.md,
+          left: AppSpacing.screenPaddingMobile,
+          right: AppSpacing.screenPaddingMobile,
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _FilterBar(filters: filters),
+                if (venuesAsync.hasError) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _ErrorBanner(message: '${venuesAsync.error}'),
+                ],
+                if (filteredEventsAsync?.hasError ?? false) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _ErrorBanner(message: '${filteredEventsAsync!.error}'),
+                ],
+              ],
+            ),
           ),
+        ),
       ],
     );
   }
@@ -179,6 +209,127 @@ class _ClusterBubble extends StatelessWidget {
           color: Colors.white,
           fontWeight: FontWeight.w700,
           fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+/// "FilterBar (oben, horizontal scrollbar Chips)" laut
+/// docs/05-navigation-structure.md. Öffnet dieselbe FilterSheet wie die
+/// Suche (geteilter eventFiltersProvider) statt einer Karte-eigenen
+/// Filter-Implementierung; Barrierefrei/Open Air zusätzlich als
+/// Direkt-Umschalter, weil das die zwei häufigsten Einzelfilter beim
+/// spontanen Kartenblättern sein dürften.
+class _FilterBar extends ConsumerWidget {
+  const _FilterBar({required this.filters});
+
+  final EventFilters filters;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _BarChip(
+            label: filters.activeCount > 0
+                ? 'Filter (${filters.activeCount})'
+                : 'Filter',
+            icon: Icons.tune_rounded,
+            active: filters.activeCount > 0,
+            onTap: () => showEventFilterSheet(context),
+          ),
+          const SizedBox(width: 8),
+          _BarChip(
+            label: 'Barrierefrei',
+            active: filters.accessibleOnly,
+            onTap: () =>
+                ref.read(eventFiltersProvider.notifier).state = EventFilters(
+                  dateRange: filters.dateRange,
+                  genreIds: filters.genreIds,
+                  maxPrice: filters.maxPrice,
+                  accessibleOnly: !filters.accessibleOnly,
+                  openAirOnly: filters.openAirOnly,
+                  maxDistanceKm: filters.maxDistanceKm,
+                ),
+          ),
+          const SizedBox(width: 8),
+          _BarChip(
+            label: 'Open Air',
+            active: filters.openAirOnly,
+            onTap: () =>
+                ref.read(eventFiltersProvider.notifier).state = EventFilters(
+                  dateRange: filters.dateRange,
+                  genreIds: filters.genreIds,
+                  maxPrice: filters.maxPrice,
+                  accessibleOnly: filters.accessibleOnly,
+                  openAirOnly: !filters.openAirOnly,
+                  maxDistanceKm: filters.maxDistanceKm,
+                ),
+          ),
+          if (filters.isActive) ...[
+            const SizedBox(width: 8),
+            _BarChip(
+              label: 'Zurücksetzen',
+              icon: Icons.close_rounded,
+              active: false,
+              onTap: () => ref.read(eventFiltersProvider.notifier).state =
+                  EventFilters.empty,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BarChip extends StatelessWidget {
+  const _BarChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+    this.icon,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return Material(
+      color: active ? colors.accentPrimary : colors.backgroundElevated,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 2,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 15,
+                  color: active ? Colors.white : colors.textSecondary,
+                ),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : colors.textPrimary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

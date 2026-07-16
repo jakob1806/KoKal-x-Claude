@@ -24,6 +24,7 @@ class HomeEventItem {
     required this.venueAndTime,
     required this.genre,
     required this.startDateTime,
+    this.venueId,
     this.badge,
   });
 
@@ -33,6 +34,7 @@ class HomeEventItem {
   final String venueAndTime;
   final EventGenre genre;
   final DateTime? startDateTime;
+  final String? venueId;
   final String? badge;
 
   factory HomeEventItem.fromRow(Map<String, dynamic> row) {
@@ -59,6 +61,7 @@ class HomeEventItem {
       ].whereType<String>().join(' · '),
       genre: EventGenre.fromSlug(genreSlugs.isEmpty ? null : genreSlugs.first),
       startDateTime: start,
+      venueId: row['venue_id'] as String?,
       badge: badge,
     );
   }
