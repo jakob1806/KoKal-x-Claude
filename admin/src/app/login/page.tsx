@@ -17,11 +17,19 @@ function LoginForm() {
     setStatus("sending");
     setErrorMessage("");
 
+    // emailRedirectTo muss exakt (ohne Query-String) mit einer bei Supabase
+    // freigegebenen Redirect-URL übereinstimmen, sonst verwirft Supabase den
+    // Redirect kommentarlos und fällt auf die Site-URL zurück — die
+    // Callback-Route landet dann ohne Code auf /login und der Nutzer hängt
+    // in einer Schleife fest. redirectTo wird daher separat per Cookie an
+    // die Callback-Route durchgereicht statt über die Redirect-URL selbst.
+    document.cookie = `post_login_redirect=${encodeURIComponent(redirectTo)}; path=/; max-age=600; SameSite=Lax`;
+
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
