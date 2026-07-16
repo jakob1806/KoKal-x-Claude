@@ -10,6 +10,7 @@ import '../../../core/widgets/favorite_button.dart';
 import '../../../core/widgets/genre_artwork.dart';
 import '../../home/application/home_providers.dart';
 import '../application/calendar_providers.dart';
+import 'widgets/calendar_sync_sheet.dart';
 
 DateTime _dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -44,9 +45,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               horizontal: AppSpacing.screenPaddingMobile,
               vertical: AppSpacing.md,
             ),
-            child: Text(
-              'Kalender',
-              style: Theme.of(context).textTheme.headlineMedium,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Kalender',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.sync_rounded, color: colors.textSecondary),
+                  tooltip: 'Kalender synchronisieren',
+                  onPressed: () => showModalBottomSheet(
+                    context: context,
+                    builder: (_) => const CalendarSyncSheet(),
+                  ),
+                ),
+              ],
             ),
           ),
           Padding(

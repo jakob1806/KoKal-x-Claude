@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/auth/auth_providers.dart';
 import '../../home/application/home_providers.dart';
 
 /// Schlüssel für [monthEventsProvider] — Jahr+Monat statt eines konkreten
@@ -48,6 +49,77 @@ final monthEventsProvider = FutureProvider.autoDispose
         byDay.putIfAbsent(_dayKey(item.startDateTime!), () => []).add(item);
       }
       return byDay;
+    });
+
+/// Event mit den Feldern, die ein Kalender-Eintrag braucht (Dauer, Adresse,
+/// Link) statt der schlankeren [HomeEventItem] aus den Listen-Providern.
+class SyncableEvent {
+  const SyncableEvent({
+    required this.id,
+    required this.title,
+    required this.start,
+    this.durationMinutes,
+    this.description,
+    this.location,
+    this.url,
+  });
+
+  final String id;
+  final String title;
+  final DateTime start;
+  final int? durationMinutes;
+  final String? description;
+  final String? location;
+  final String? url;
+
+  DateTime get end => start.add(Duration(minutes: durationMinutes ?? 120));
+}
+
+/// Für den Kalender-Sync-Sheet (Apple/Google Kalender, ICS-Export): nur
+/// anstehende favorisierte Events — vergangene in den Gerätekalender/eine
+/// ICS zu schreiben wäre nutzlos.
+final upcomingFavoriteEventsProvider =
+    FutureProvider.autoDispose<List<SyncableEvent>>((ref) async {
+      final user = ref.watch(currentUserProvider);
+      if (user == null) return [];
+
+      final rows = await Supabase.instance.client
+          .from('favorites')
+          .select(
+            'events(id, title, description_de, start_datetime, duration_minutes, website_url, ticket_url, venues(name, address_street, address_zip, address_city))',
+          )
+          .eq('user_id', user.id);
+
+      final now = DateTime.now();
+      final events = <SyncableEvent>[];
+      for (final row in rows as List) {
+        final e = row['events'] as Map<String, dynamic>?;
+        if (e == null) continue;
+        final start = DateTime.tryParse(e['start_datetime'] as String? ?? '');
+        if (start == null || !start.isAfter(now)) continue;
+
+        final venue = e['venues'] as Map<String, dynamic>?;
+        events.add(
+          SyncableEvent(
+            id: e['id'] as String,
+            title: e['title'] as String? ?? '',
+            start: start,
+            durationMinutes: e['duration_minutes'] as int?,
+            description: e['description_de'] as String?,
+            location: venue == null
+                ? null
+                : [
+                    venue['name'],
+                    venue['address_street'],
+                    venue['address_zip'],
+                    venue['address_city'],
+                  ].whereType<String>().join(', '),
+            url: e['website_url'] as String? ?? e['ticket_url'] as String?,
+          ),
+        );
+      }
+      events.sort((a, b) => a.start.compareTo(b.start));
+      return events;
     });
 
 /// Für den Agenda-Modus: chronologische Liste ab heute statt an einen
