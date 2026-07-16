@@ -4,10 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../auth/auth_providers.dart';
 
 enum NotificationPreferenceKey {
-  newMatchingEvents('notify_new_matching_events'),
-  priceChanges('notify_price_changes'),
-  almostSoldOut('notify_almost_sold_out'),
-  reminderDayBefore('notify_reminder_day_before');
+  newMatchingEvents('new_matching_events'),
+  priceChanges('price_changes'),
+  almostSoldOut('almost_sold_out'),
+  reminderDayBefore('reminder_day_before'),
+  followedEnsembleNewEvent('followed_ensemble_new_event');
 
   const NotificationPreferenceKey(this.column);
 
@@ -20,18 +21,21 @@ class NotificationPreferences {
     required this.priceChanges,
     required this.almostSoldOut,
     required this.reminderDayBefore,
+    required this.followedEnsembleNewEvent,
   });
 
   final bool newMatchingEvents;
   final bool priceChanges;
   final bool almostSoldOut;
   final bool reminderDayBefore;
+  final bool followedEnsembleNewEvent;
 
   static const defaults = NotificationPreferences(
     newMatchingEvents: true,
     priceChanges: true,
     almostSoldOut: true,
     reminderDayBefore: true,
+    followedEnsembleNewEvent: true,
   );
 
   bool operator [](NotificationPreferenceKey key) => switch (key) {
@@ -39,32 +43,39 @@ class NotificationPreferences {
     NotificationPreferenceKey.priceChanges => priceChanges,
     NotificationPreferenceKey.almostSoldOut => almostSoldOut,
     NotificationPreferenceKey.reminderDayBefore => reminderDayBefore,
+    NotificationPreferenceKey.followedEnsembleNewEvent =>
+      followedEnsembleNewEvent,
   };
 
   factory NotificationPreferences.fromRow(Map<String, dynamic> row) {
     return NotificationPreferences(
-      newMatchingEvents: row['notify_new_matching_events'] as bool? ?? true,
-      priceChanges: row['notify_price_changes'] as bool? ?? true,
-      almostSoldOut: row['notify_almost_sold_out'] as bool? ?? true,
-      reminderDayBefore: row['notify_reminder_day_before'] as bool? ?? true,
+      newMatchingEvents: row['new_matching_events'] as bool? ?? true,
+      priceChanges: row['price_changes'] as bool? ?? true,
+      almostSoldOut: row['almost_sold_out'] as bool? ?? true,
+      reminderDayBefore: row['reminder_day_before'] as bool? ?? true,
+      followedEnsembleNewEvent:
+          row['followed_ensemble_new_event'] as bool? ?? true,
     );
   }
 }
 
+/// notification_preferences existiert seit Phase 0 als eigene Tabelle,
+/// aber ohne Zeile pro Nutzer (kein Auto-Insert-Trigger wie bei profiles) —
+/// vor dem ersten Toggle also einfach noch keine Zeile, daher der
+/// Default-Fallback statt .single().
 final notificationPreferencesProvider =
     FutureProvider.autoDispose<NotificationPreferences>((ref) async {
       final user = ref.watch(currentUserProvider);
       if (user == null) return NotificationPreferences.defaults;
 
       final row = await Supabase.instance.client
-          .from('profiles')
-          .select(
-            'notify_new_matching_events, notify_price_changes, '
-            'notify_almost_sold_out, notify_reminder_day_before',
-          )
-          .eq('id', user.id)
-          .single();
-      return NotificationPreferences.fromRow(row);
+          .from('notification_preferences')
+          .select()
+          .eq('user_id', user.id)
+          .maybeSingle();
+      return row == null
+          ? NotificationPreferences.defaults
+          : NotificationPreferences.fromRow(row);
     });
 
 class NotificationPreferencesService {
@@ -78,10 +89,13 @@ class NotificationPreferencesService {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
-    await Supabase.instance.client
-        .from('profiles')
-        .update({key.column: value})
-        .eq('id', user.id);
+    // Upsert statt update — vor dem ersten Toggle gibt es noch keine Zeile;
+    // die übrigen Spalten fallen dann korrekt auf ihre eigenen DB-Defaults
+    // (default true) zurück statt auf null.
+    await Supabase.instance.client.from('notification_preferences').upsert({
+      'user_id': user.id,
+      key.column: value,
+    }, onConflict: 'user_id');
     ref.invalidate(notificationPreferencesProvider);
   }
 }
