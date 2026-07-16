@@ -64,6 +64,7 @@ dependencies:
 
   # Karte (OpenStreetMap statt Google Maps — keine API-Key-Pflicht/Kosten)
   flutter_map: ^7.0.2
+  flutter_map_marker_cluster: ^1.4.0
   latlong2: ^0.9.1
 
   # Kalender-UI
