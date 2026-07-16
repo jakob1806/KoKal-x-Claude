@@ -23,6 +23,7 @@ class HomeEventItem {
     required this.title,
     required this.venueAndTime,
     required this.genre,
+    required this.startDateTime,
     this.badge,
   });
 
@@ -31,6 +32,7 @@ class HomeEventItem {
   final String title;
   final String venueAndTime;
   final EventGenre genre;
+  final DateTime? startDateTime;
   final String? badge;
 
   factory HomeEventItem.fromRow(Map<String, dynamic> row) {
@@ -56,6 +58,7 @@ class HomeEventItem {
         start != null ? _formatDateTime(start) : null,
       ].whereType<String>().join(' · '),
       genre: EventGenre.fromSlug(genreSlugs.isEmpty ? null : genreSlugs.first),
+      startDateTime: start,
       badge: badge,
     );
   }
