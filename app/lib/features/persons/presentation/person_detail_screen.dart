@@ -5,7 +5,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/detail_hero_background.dart';
+import '../../../core/widgets/external_links_row.dart';
 import '../../../core/widgets/genre_artwork.dart';
+import '../../../core/widgets/past_events_expansion.dart';
 
 final _personProvider = FutureProvider.family<Map<String, dynamic>?, String>((
   ref,
@@ -56,7 +59,12 @@ class PersonDetailScreen extends ConsumerWidget {
             );
             return start != null && start.isAfter(now);
           }).toList();
-          final past = events.length - upcoming.length;
+          final past = events.where((row) {
+            final start = DateTime.tryParse(
+              row['events']?['start_datetime'] ?? '',
+            );
+            return start != null && start.isBefore(now);
+          }).toList();
 
           return CustomScrollView(
             slivers: [
@@ -66,21 +74,9 @@ class PersonDetailScreen extends ConsumerWidget {
                 backgroundColor: colors.backgroundPrimary,
                 iconTheme: const IconThemeData(color: Colors.white),
                 flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      const GenreArtwork(genre: EventGenre.kammermusik),
-                      Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Color(0xBF000000)],
-                            stops: [0.5, 1.0],
-                          ),
-                        ),
-                      ),
-                    ],
+                  background: DetailHeroBackground(
+                    photoUrl: person['photo_url'] as String?,
+                    fallbackGenre: EventGenre.kammermusik,
                   ),
                 ),
               ),
@@ -114,15 +110,17 @@ class PersonDetailScreen extends ConsumerWidget {
                             .toList(),
                       ),
                     ],
-                    if (person['nationality'] != null) ...[
+                    if (person['nationality'] != null ||
+                        person['instrument'] != null) ...[
                       const SizedBox(height: AppSpacing.sm),
                       Text(
                         [
                           person['nationality'],
+                          person['instrument'],
                           if (person['birth_date'] != null)
                             '* ${(person['birth_date'] as String).substring(0, 4)}'
                                 '${person['death_date'] != null ? ' † ${(person['death_date'] as String).substring(0, 4)}' : ''}',
-                        ].join(' · '),
+                        ].whereType<String>().join(' · '),
                         style: TextStyle(
                           color: colors.textSecondary,
                           fontSize: 13,
@@ -140,6 +138,13 @@ class PersonDetailScreen extends ConsumerWidget {
                         ),
                       ),
                     ],
+                    const SizedBox(height: AppSpacing.md),
+                    ExternalLinksRow(
+                      websiteUrl: person['website_url'] as String?,
+                      wikipediaUrl: person['wikipedia_url'] as String?,
+                      socialLinks:
+                          person['social_links'] as Map<String, dynamic>?,
+                    ),
                     const SizedBox(height: AppSpacing.xxl),
                     Text(
                       'Kommende Veranstaltungen',
@@ -157,14 +162,13 @@ class PersonDetailScreen extends ConsumerWidget {
                     else
                       for (final row in upcoming)
                         _EventRow(row: row, colors: colors),
-                    if (past > 0) ...[
+                    if (past.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.lg),
-                      Text(
-                        '$past vergangene Veranstaltung${past == 1 ? '' : 'en'}',
-                        style: TextStyle(
-                          color: colors.textTertiary,
-                          fontSize: 12,
-                        ),
+                      PastEventsExpansion(
+                        rows: [
+                          for (final row in past)
+                            _EventRow(row: row, colors: colors),
+                        ],
                       ),
                     ],
                   ],
