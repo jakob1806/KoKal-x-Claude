@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
@@ -12,6 +10,7 @@ import '../../../core/events/event_filters.dart';
 import '../../../core/events/filtered_events_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/utils/external_maps.dart';
 import '../../../core/widgets/event_filter_sheet.dart';
 import '../application/map_providers.dart';
 
@@ -131,25 +130,6 @@ class MapScreen extends ConsumerWidget {
       builder: (_) => _VenuePreviewSheet(venue: venue),
     );
   }
-}
-
-Future<void> _openExternalMaps(MapVenue venue) async {
-  final Uri uri;
-  switch (defaultTargetPlatform) {
-    case TargetPlatform.iOS:
-      uri = Uri.parse(
-        'https://maps.apple.com/?daddr=${venue.lat},${venue.lng}&q=${Uri.encodeComponent(venue.name)}',
-      );
-    case TargetPlatform.android:
-      uri = Uri.parse(
-        'geo:${venue.lat},${venue.lng}?q=${venue.lat},${venue.lng}(${Uri.encodeComponent(venue.name)})',
-      );
-    default:
-      uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=${venue.lat},${venue.lng}',
-      );
-  }
-  await launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
 class _VenuePin extends StatelessWidget {
@@ -399,7 +379,11 @@ class _VenuePreviewSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => _openExternalMaps(venue),
+                    onPressed: () => openExternalMaps(
+                      lat: venue.lat,
+                      lng: venue.lng,
+                      name: venue.name,
+                    ),
                     icon: const Icon(Icons.directions_rounded),
                     label: const Text('Route'),
                   ),

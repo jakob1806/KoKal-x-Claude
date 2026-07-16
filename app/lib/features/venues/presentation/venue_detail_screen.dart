@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/utils/external_maps.dart';
 import '../../../core/widgets/genre_artwork.dart';
 
 final _venueProvider = FutureProvider.family<Map<String, dynamic>?, String>((
@@ -20,6 +20,9 @@ final _venueProvider = FutureProvider.family<Map<String, dynamic>?, String>((
       .maybeSingle();
   if (venue == null) return null;
 
+  // Separater RPC-Aufruf statt lat/lng in die venues-Query zu mischen —
+  // PostgREST liefert geography-Spalten sonst als WKB-Hex, dieselbe RPC
+  // nutzt schon der Karten-Tab und das Admin-Dashboard (venue_with_latlng).
   final events = await client
       .from('events')
       .select('id, slug, title, start_datetime')
@@ -27,7 +30,11 @@ final _venueProvider = FutureProvider.family<Map<String, dynamic>?, String>((
       .neq('status', 'draft')
       .order('start_datetime');
 
-  return {'venue': venue, 'events': events};
+  final latLng = await client
+      .rpc('venue_with_latlng', params: {'p_id': venue['id']})
+      .maybeSingle();
+
+  return {'venue': venue, 'events': events, 'latLng': latLng};
 });
 
 class VenueDetailScreen extends ConsumerWidget {
@@ -50,6 +57,7 @@ class VenueDetailScreen extends ConsumerWidget {
           }
           final venue = data['venue'] as Map<String, dynamic>;
           final events = data['events'] as List;
+          final latLng = data['latLng'] as Map<String, dynamic>?;
           final now = DateTime.now();
           final upcoming = events.where((e) {
             final start = DateTime.tryParse(e['start_datetime'] ?? '');
@@ -111,12 +119,13 @@ class VenueDetailScreen extends ConsumerWidget {
                           ),
                         ),
                         TextButton(
-                          onPressed: () => launchUrl(
-                            Uri.parse(
-                              'https://www.openstreetmap.org/search?query=${Uri.encodeComponent(address)}',
-                            ),
-                            mode: LaunchMode.externalApplication,
-                          ),
+                          onPressed: latLng == null
+                              ? null
+                              : () => openExternalMaps(
+                                  lat: (latLng['lat'] as num).toDouble(),
+                                  lng: (latLng['lng'] as num).toDouble(),
+                                  name: venue['name'] as String? ?? '',
+                                ),
                           child: const Text('Route'),
                         ),
                       ],
