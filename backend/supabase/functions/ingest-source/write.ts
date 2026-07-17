@@ -145,6 +145,8 @@ export async function upsertRawEvent(
         external_id: raw.externalId,
         content_hash: contentHash,
         last_verified_at: nowIso,
+        attribution_notice: raw.attributionNotice ?? null,
+        attribution_license_url: raw.attributionLicenseUrl ?? null,
       })
       .select("id")
       .single();
@@ -238,6 +240,8 @@ function buildUpdatePayload(raw: RawEvent): Record<string, unknown> {
   if (raw.priceMax !== null) payload.price_max = raw.priceMax;
   if (raw.isFree !== null) payload.is_free = raw.isFree;
   if (raw.url !== null) payload.website_url = raw.url;
+  if (raw.attributionNotice != null) payload.attribution_notice = raw.attributionNotice;
+  if (raw.attributionLicenseUrl != null) payload.attribution_license_url = raw.attributionLicenseUrl;
   return payload;
 }
 
