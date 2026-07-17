@@ -43,9 +43,18 @@ export interface ScrapeConfig {
   /** Selektor für Datum/Uhrzeit. dateAttribute (z.B. "datetime" bei <time>)
    * wird bevorzugt, sonst wird der Text-Inhalt geparst: unterstützt sowohl
    * "YYYY-MM-DD[ HH:MM]" als auch deutsches Langformat ("27. September
-   * 2026" + optional "19 Uhr" irgendwo im selben Text). */
+   * 2026" + optional "19 Uhr" irgendwo im selben Text) als auch knappes
+   * Format ohne Jahr ("Fr 24 Jul", z.B. st-michael-muenchen.de) — dort wird
+   * das Jahr aus dem aktuellen Datum abgeleitet (Kalenderlisten zeigen nur
+   * kommende Termine: liegt das Datum im laufenden Jahr bereits > 1 Tag in
+   * der Vergangenheit, wird das nächste Jahr angenommen). */
   dateSelector: string;
   dateAttribute?: string;
+  /** Separater Selektor für die Uhrzeit, falls sie nicht im selben Element
+   * wie das Datum steht (z.B. st-michael-muenchen.de: Datum und Uhrzeit
+   * sind zwei getrennte Geschwister-Elemente). Wird an den dateSelector-Text
+   * angehängt, bevor geparst wird. */
+  timeSelector?: string;
   descriptionSelector?: string;
   imageSelector?: string;
   imageAttribute?: string; // default "src"
@@ -128,9 +137,11 @@ export function parseScrape(html: string, config: ScrapeConfig): ParseResult {
         : null;
 
       const dateRaw = extractText(item, config.dateSelector, config.dateAttribute);
-      const startDateTime = dateRaw ? parseFlexibleDate(dateRaw) : null;
+      const timeRaw = config.timeSelector ? extractText(item, config.timeSelector) : null;
+      const combinedDateRaw = timeRaw ? `${dateRaw ?? ""} ${timeRaw}`.trim() : dateRaw;
+      const startDateTime = combinedDateRaw ? parseFlexibleDate(combinedDateRaw) : null;
       if (!startDateTime) {
-        errors.push(`${label} ("${title}"): no parseable date via "${config.dateSelector}" (got "${dateRaw}"), skipped`);
+        errors.push(`${label} ("${title}"): no parseable date via "${config.dateSelector}" (got "${combinedDateRaw}"), skipped`);
         return;
       }
 
@@ -264,12 +275,32 @@ const GERMAN_MONTHS: Record<string, number> = {
   "dezember": 12,
 };
 
-/** Handles "YYYY-MM-DD[ HH:MM]" (gasteig.de's <time datetime> format) and,
- * as a fallback, German long-form date text with an optional "N Uhr" time
+const GERMAN_MONTHS_ABBR: Record<string, number> = {
+  "jan": 1,
+  "feb": 2,
+  "mär": 3,
+  "mrz": 3,
+  "apr": 4,
+  "mai": 5,
+  "jun": 6,
+  "jul": 7,
+  "aug": 8,
+  "sep": 9,
+  "okt": 10,
+  "nov": 11,
+  "dez": 12,
+};
+
+/** Handles "YYYY-MM-DD[ HH:MM]" (gasteig.de's <time datetime> format), as a
+ * fallback German long-form date text with an optional "N Uhr" time
  * anywhere in the same string — e.g. "Sonntag, 27. September 2026 19 Uhr"
  * (residenz-muenchen.de, which has no machine-readable date attribute at
- * all). Assumes Europe/Berlin local time for the German-text path, same DST
- * logic as parsers/rss.ts's toIsoWithBerlinOffset. */
+ * all) — and, as a final fallback, abbreviated month with no year at all —
+ * e.g. "Fr 24 Jul 20:00 Uhr" (st-michael-muenchen.de, which never states
+ * the year anywhere, not even on its own detail pages) — where the year is
+ * inferred from the current date (see inferYear). Assumes Europe/Berlin
+ * local time throughout, same DST logic as parsers/rss.ts's
+ * toIsoWithBerlinOffset. */
 function parseFlexibleDate(raw: string): string | null {
   const text = raw.trim();
 
@@ -297,7 +328,37 @@ function parseFlexibleDate(raw: string): string | null {
     return toBerlinIsoString(year, month, day, hour, minute);
   }
 
+  // No period-after-day and no 4-digit year, e.g. "Fr 24 Jul" — the leading
+  // weekday abbreviation has no digit before it, so matching "digit(s) +
+  // whitespace + letters" directly lands on "24 Jul" without needing to
+  // explicitly strip "Fr" first.
+  const abbreviated = text.match(/(\d{1,2})\s+([A-Za-zÄÖÜäöü]{3,4})\b/);
+  if (abbreviated) {
+    const day = parseInt(abbreviated[1], 10);
+    const month = GERMAN_MONTHS_ABBR[abbreviated[2].toLowerCase().slice(0, 3)];
+    if (month) {
+      const timeMatch = text.match(/(\d{1,2})(?:[:.](\d{2}))?\s*Uhr/i);
+      const hour = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+      const minute = timeMatch && timeMatch[2] !== undefined ? parseInt(timeMatch[2], 10) : 0;
+      const year = inferYear(month, day, hour, minute);
+      return toBerlinIsoString(year, month, day, hour, minute);
+    }
+  }
+
   return null;
+}
+
+/** Calendar listings only ever show upcoming events, so a year-less date is
+ * either this year or next. If reading it in the current year would already
+ * be more than a day in the past, it must mean next year instead (e.g. "15
+ * Jan" encountered while scraping in December). The 1-day buffer absorbs
+ * the Berlin-vs-UTC offset without needing exact timezone math here. */
+function inferYear(month: number, day: number, hour: number, minute: number): number {
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const candidateMs = Date.UTC(currentYear, month - 1, day, hour, minute);
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  return candidateMs < now.getTime() - oneDayMs ? currentYear + 1 : currentYear;
 }
 
 function toBerlinIsoString(
