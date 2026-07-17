@@ -32,12 +32,18 @@ export interface ScrapeConfig {
   titleFullText?: boolean;
   /** Selektor für den Link zur Event-Detailseite (wird als externalId UND
    * als url verwendet — der Link ist auf solchen Seiten praktisch immer
-   * pro Event eindeutig und stabil). */
-  urlSelector: string;
+   * pro Event eindeutig und stabil). Optional: manche Seiten (z.B.
+   * residenz-muenchen.de) verlinken nicht jedes Event einzeln, sondern nur
+   * auf einen gemeinsamen Ticketanbieter — ohne urlSelector bleiben
+   * url/externalId null und die Zuordnung läuft über den Fuzzy-Match
+   * (Titel+Venue+Zeit) statt über die exakte (source_id, external_id)-
+   * Kurzschluss-Prüfung. */
+  urlSelector?: string;
   urlAttribute?: string; // default "href"
   /** Selektor für Datum/Uhrzeit. dateAttribute (z.B. "datetime" bei <time>)
-   * wird bevorzugt, sonst wird der Text-Inhalt geparst (unterstützt
-   * "YYYY-MM-DD" und "YYYY-MM-DD HH:MM", das hier beobachtete Format). */
+   * wird bevorzugt, sonst wird der Text-Inhalt geparst: unterstützt sowohl
+   * "YYYY-MM-DD[ HH:MM]" als auch deutsches Langformat ("27. September
+   * 2026" + optional "19 Uhr" irgendwo im selben Text). */
   dateSelector: string;
   dateAttribute?: string;
   descriptionSelector?: string;
@@ -114,10 +120,12 @@ export function parseScrape(html: string, config: ScrapeConfig): ParseResult {
         return;
       }
 
-      const url = resolveUrl(
-        extractText(item, config.urlSelector, config.urlAttribute ?? "href"),
-        config.baseUrl,
-      );
+      const url = config.urlSelector
+        ? resolveUrl(
+          extractText(item, config.urlSelector, config.urlAttribute ?? "href"),
+          config.baseUrl,
+        )
+        : null;
 
       const dateRaw = extractText(item, config.dateSelector, config.dateAttribute);
       const startDateTime = dateRaw ? parseFlexibleDate(dateRaw) : null;
@@ -240,24 +248,69 @@ function resolveUrl(value: string | null, baseUrl?: string): string | null {
   }
 }
 
-/** Handles "YYYY-MM-DD" and "YYYY-MM-DD HH:MM" (the exact format observed
- * on gasteig.de's <time datetime> attribute — not standard ISO 8601, no
- * "T" separator, no timezone). Assumes Europe/Berlin local time, same DST
+const GERMAN_MONTHS: Record<string, number> = {
+  "januar": 1,
+  "februar": 2,
+  "märz": 3,
+  "maerz": 3,
+  "april": 4,
+  "mai": 5,
+  "juni": 6,
+  "juli": 7,
+  "august": 8,
+  "september": 9,
+  "oktober": 10,
+  "november": 11,
+  "dezember": 12,
+};
+
+/** Handles "YYYY-MM-DD[ HH:MM]" (gasteig.de's <time datetime> format) and,
+ * as a fallback, German long-form date text with an optional "N Uhr" time
+ * anywhere in the same string — e.g. "Sonntag, 27. September 2026 19 Uhr"
+ * (residenz-muenchen.de, which has no machine-readable date attribute at
+ * all). Assumes Europe/Berlin local time for the German-text path, same DST
  * logic as parsers/rss.ts's toIsoWithBerlinOffset. */
 function parseFlexibleDate(raw: string): string | null {
-  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
-  if (!m) return null;
-  const year = parseInt(m[1], 10);
-  const month = parseInt(m[2], 10);
-  const day = parseInt(m[3], 10);
-  const hour = m[4] !== undefined ? parseInt(m[4], 10) : 0;
-  const minute = m[5] !== undefined ? parseInt(m[5], 10) : 0;
+  const text = raw.trim();
 
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if (iso) {
+    const year = parseInt(iso[1], 10);
+    const month = parseInt(iso[2], 10);
+    const day = parseInt(iso[3], 10);
+    const hour = iso[4] !== undefined ? parseInt(iso[4], 10) : 0;
+    const minute = iso[5] !== undefined ? parseInt(iso[5], 10) : 0;
+    return toBerlinIsoString(year, month, day, hour, minute);
+  }
+
+  const german = text.match(
+    /(\d{1,2})\.\s*(Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s*(\d{4})/i,
+  );
+  if (german) {
+    const day = parseInt(german[1], 10);
+    const month = GERMAN_MONTHS[german[2].toLowerCase()];
+    const year = parseInt(german[3], 10);
+    if (!month) return null;
+    const timeMatch = text.match(/(\d{1,2})(?:[:.](\d{2}))?\s*Uhr/i);
+    const hour = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+    const minute = timeMatch && timeMatch[2] !== undefined ? parseInt(timeMatch[2], 10) : 0;
+    return toBerlinIsoString(year, month, day, hour, minute);
+  }
+
+  return null;
+}
+
+function toBerlinIsoString(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+): string | null {
   const d = new Date(Date.UTC(year, month - 1, day));
   if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
     return null;
   }
-
   const isSummer = isBerlinSummerTime(year, month, day, hour);
   const offset = isSummer ? "+02:00" : "+01:00";
   const pad = (n: number) => n.toString().padStart(2, "0");
