@@ -1,4 +1,5 @@
 import 'package:device_calendar/device_calendar.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
 
 class CalendarSyncEvent {
   const CalendarSyncEvent({
@@ -38,9 +39,21 @@ class CalendarSyncService {
 
   static const _calendarName = 'Klassik München';
 
+  // getLocation() unten braucht die IANA-Zeitzonendatenbank des timezone-
+  // Pakets, die anders als z.B. bei Firebase nicht automatisch initialisiert
+  // wird — ohne diesen Aufruf wirft jeder Sync-Versuch eine
+  // TimeZoneInitException. Lazy statt in main(), da nur dieser eine Screen
+  // sie braucht.
+  static bool _timeZonesInitialized = false;
+
   static Future<CalendarSyncResult> syncEvents(
     List<CalendarSyncEvent> events,
   ) async {
+    if (!_timeZonesInitialized) {
+      tz_data.initializeTimeZones();
+      _timeZonesInitialized = true;
+    }
+
     final plugin = DeviceCalendarPlugin();
 
     var hasPermission = (await plugin.hasPermissions()).data ?? false;
