@@ -22,6 +22,15 @@ export interface RawEvent {
   priceMin: number | null;
   priceMax: number | null;
   isFree: boolean | null;
+  /** Pflicht-Urheberrechtsvermerk von Quellen mit expliziter Lizenzauflage
+   * (z.B. BayernCloud Tourismus: "Der entsprechende Urheberrechtsvermerk
+   * der Datensätze muss mit angegeben werden"). Optional statt der
+   * required-nullable Konvention der übrigen Felder — bewusste Ausnahme,
+   * damit bestehende und parallel in Arbeit befindliche Connectoren diese
+   * Felder nicht nachziehen müssen, nur weil das Interface um einen Fall
+   * erweitert wurde, den nur eine einzelne Quelle betrifft. */
+  attributionNotice?: string | null;
+  attributionLicenseUrl?: string | null;
 }
 
 export interface ParseResult {

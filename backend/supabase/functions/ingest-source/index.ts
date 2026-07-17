@@ -13,6 +13,7 @@
 // docs/templates use, and the one most likely to be pre-cached/validated
 // in the actual Supabase Edge Runtime rather than vanilla Deno.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { parseBayernCloud } from "./parsers/bayerncloud.ts";
 import { parseIcal } from "./parsers/ical.ts";
 import { parseRss } from "./parsers/rss.ts";
 import { parseScrape } from "./parsers/scrape.ts";
@@ -20,7 +21,7 @@ import { parseSchemaOrg } from "./parsers/schema_org.ts";
 import type { ParseResult } from "./types.ts";
 import { upsertRawEvent } from "./write.ts";
 
-const SUPPORTED_TYPES = new Set(["schema_org", "ical", "rss", "scrape"]);
+const SUPPORTED_TYPES = new Set(["schema_org", "ical", "rss", "scrape", "api"]);
 
 // Identifiziert diese App als Absender statt einen echten Browser
 // vorzutäuschen — Mindest-Transparenz für den scrape-Quellentyp (siehe
@@ -93,6 +94,8 @@ Deno.serve(async (req) => {
     .select("id, name, type, url, venue_id, config")
     .eq("id", sourceId)
     .maybeSingle();
+  // deno-lint-ignore no-explicit-any
+  const config = (source?.config ?? {}) as Record<string, any>;
 
   if (sourceError) {
     return jsonResponse({ error: `failed to load source: ${sourceError.message}` }, 500);
@@ -132,9 +135,26 @@ Deno.serve(async (req) => {
     }
   }
 
+  // 'api'-Quellen (bisher nur BayernCloud Tourismus) sind Bearer-Token-
+  // authentifiziert — anders als jede scrape/schema_org/rss/ical-Quelle,
+  // die alle öffentlich/anonym abrufbar sind. Der Token selbst steht nie in
+  // sources.config (das wäre ein Secret in der DB) — config trägt nur den
+  // NAMEN des Supabase-Secrets, aus dem der Token zur Laufzeit gelesen wird.
+  const headers: Record<string, string> = { "User-Agent": USER_AGENT };
+  if (source.type === "api" && typeof config.authHeaderEnvVar === "string") {
+    const token = Deno.env.get(config.authHeaderEnvVar);
+    if (!token) {
+      const message = `source.config.authHeaderEnvVar is "${config.authHeaderEnvVar}", but no such Supabase secret is set`;
+      await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
+      await touchSource(supabase, source.id, false);
+      return jsonResponse({ status: "failed", error: message }, 500);
+    }
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   let responseBody: string;
   try {
-    const res = await fetch(source.url, { headers: { "User-Agent": USER_AGENT } });
+    const res = await fetch(source.url, { headers });
     if (!res.ok) {
       const message = `fetch failed: HTTP ${res.status} ${res.statusText}`;
       await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
@@ -163,6 +183,9 @@ Deno.serve(async (req) => {
         break;
       case "scrape":
         parsed = parseScrape(responseBody, source.config);
+        break;
+      case "api":
+        parsed = parseBayernCloud(responseBody);
         break;
       default:
         // Unreachable given the SUPPORTED_TYPES guard above, but keeps the

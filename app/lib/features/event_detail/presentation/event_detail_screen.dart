@@ -27,6 +27,7 @@ final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
         start_datetime, duration_minutes, has_intermission,
         ticket_url, price_min, price_max, price_currency, is_free,
         website_url, accessibility, status, image_urls,
+        attribution_notice, attribution_license_url,
         venues(id, slug, name, address_street, address_zip, address_city),
         organizers(name),
         event_genres(genres(id, slug, label_de)),
@@ -395,6 +396,15 @@ class EventDetailScreen extends ConsumerWidget {
                             ],
                           ),
                         ],
+                        if (event['attribution_notice'] != null) ...[
+                          const SizedBox(height: AppSpacing.xl),
+                          _AttributionNotice(
+                            notice: event['attribution_notice'] as String,
+                            licenseUrl:
+                                event['attribution_license_url'] as String?,
+                            colors: colors,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -430,6 +440,38 @@ class EventDetailScreen extends ConsumerWidget {
       const ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][d.weekday - 1];
   String _time(DateTime d) =>
       '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+}
+
+/// Pflicht-Urheberrechtsvermerk für Quellen mit expliziter Lizenzauflage
+/// (z.B. BayernCloud Tourismus: "der entsprechende Urheberrechtsvermerk der
+/// Datensätze muss mit angegeben werden") — null für alle anderen Quellen,
+/// zeigt sich also nur bei Events aus einer solchen Quelle.
+class _AttributionNotice extends StatelessWidget {
+  const _AttributionNotice({
+    required this.notice,
+    required this.licenseUrl,
+    required this.colors,
+  });
+
+  final String notice;
+  final String? licenseUrl;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      'Datenquelle: $notice',
+      style: TextStyle(color: colors.textTertiary, fontSize: 11),
+    );
+    if (licenseUrl == null) return text;
+    return GestureDetector(
+      onTap: () => launchUrl(
+        Uri.parse(licenseUrl!),
+        mode: LaunchMode.externalApplication,
+      ),
+      child: text,
+    );
+  }
 }
 
 class _ProgramRow extends StatelessWidget {
