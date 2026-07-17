@@ -21,11 +21,15 @@ export interface ScrapeConfig {
   /** CSS-Selektor für ein einzelnes Event-"Karten"-Element. */
   itemSelector: string;
   /** Selektor relativ zum Item für den Titel. Falls "titleAttribute" fehlt,
-   * wird nur der ERSTE direkte Text-Kindknoten genutzt (nicht der ganze
-   * textContent) — Karten haben oft einen verschachtelten Untertitel-<span>,
-   * der sonst mit reingezogen würde. */
+   * wird standardmäßig nur der ERSTE direkte Text-Kindknoten genutzt (nicht
+   * der ganze textContent) — Karten haben oft einen verschachtelten
+   * Untertitel-<span>, der sonst mit reingezogen würde. Sites, deren Titel
+   * selbst mehrzeilig ist (z.B. per <br> getrennte Komponisten-Liste ohne
+   * eigenes Untertitel-Element) setzen titleFullText, um stattdessen den
+   * kompletten textContent zu nehmen. */
   titleSelector: string;
   titleAttribute?: string;
+  titleFullText?: boolean;
   /** Selektor für den Link zur Event-Detailseite (wird als externalId UND
    * als url verwendet — der Link ist auf solchen Seiten praktisch immer
    * pro Event eindeutig und stabil). */
@@ -47,11 +51,22 @@ export interface ScrapeConfig {
   includeIfTagContains?: string[];
   /** Regex (als String) gegen den href eines Tag-Links — der Text des
    * ERSTEN Tags, dessen href matcht, wird als venueName verwendet. Für
-   * Seiten, die mehrere Säle/Räume unter einer Sammel-URL listen. */
+   * Seiten, die mehrere Säle/Räume unter einer Sammel-URL listen und den
+   * Saal nur über das Link-Ziel eines Tags markieren (z.B. gasteig.de). */
   venueTagHrefPattern?: string;
   /** Fallback, falls kein Tag zu venueTagHrefPattern passt (z.B. die
    * gebäudeweite Location statt des einzelnen Saals). */
   venueTagFallbackHrefPattern?: string;
+  /** Direkter Selektor für einen Venue-Namen-Text relativ zum Item — für
+   * die häufigere Seitenstruktur mit einem eigenen Venue-Element statt
+   * Gasteigs Tag-Link-System. Hat Vorrang vor venueTagHrefPattern, falls
+   * beide gesetzt sind. */
+  venueSelector?: string;
+  /** Nur Items behalten, deren (kleingeschriebener) venueName mindestens
+   * eine dieser Zeichenketten enthält — z.B. ["isarphilharmonie"], um von
+   * einer Seite mit Tourneedaten nur Münchner Konzerte zu behalten. Leer/
+   * fehlend = keine Filterung nach Venue. */
+  venueAllowlist?: string[];
   /** Basis-URL zum Auflösen relativer href/src-Werte. */
   baseUrl?: string;
 }
@@ -88,7 +103,12 @@ export function parseScrape(html: string, config: ScrapeConfig): ParseResult {
   items.forEach((item, i) => {
     const label = `item ${i + 1}`;
     try {
-      const title = extractText(item, config.titleSelector, config.titleAttribute, true);
+      const title = extractText(
+        item,
+        config.titleSelector,
+        config.titleAttribute,
+        !config.titleFullText,
+      );
       if (!title) {
         errors.push(`${label}: no title found via "${config.titleSelector}", skipped`);
         return;
@@ -144,6 +164,16 @@ export function parseScrape(html: string, config: ScrapeConfig): ParseResult {
         const re = new RegExp(config.venueTagFallbackHrefPattern);
         venueName = tags.find((t) => t.href && re.test(t.href))?.text ?? null;
       }
+      if (config.venueSelector) {
+        venueName = extractText(item, config.venueSelector) ?? venueName;
+      }
+
+      if (config.venueAllowlist && config.venueAllowlist.length > 0) {
+        const wanted = config.venueAllowlist.map((s) => s.toLowerCase());
+        const venueOk = venueName != null &&
+          wanted.some((w) => venueName!.toLowerCase().includes(w));
+        if (!venueOk) return; // not an error — a listing spanning many venues is expected to filter most items out
+      }
 
       const description = config.descriptionSelector
         ? extractText(item, config.descriptionSelector)
@@ -190,13 +220,13 @@ function extractText(root: any, selector: string, attribute?: string, firstTextN
   if (firstTextNodeOnly) {
     for (const child of el.childNodes) {
       if (child.nodeType === 3 /* TEXT_NODE */) {
-        const text = (child.textContent ?? "").trim();
+        const text = (child.textContent ?? "").replace(/\s+/g, " ").trim();
         if (text) return text;
       }
     }
     return null;
   }
-  const text = (el.textContent ?? "").trim();
+  const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
   return text || null;
 }
 
