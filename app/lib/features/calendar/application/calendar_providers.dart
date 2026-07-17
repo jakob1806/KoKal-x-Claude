@@ -30,8 +30,14 @@ DateTime _dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
 /// Punkt-Marker im Monatsraster als auch für die Agenda-Liste darunter.
 final monthEventsProvider = FutureProvider.autoDispose
     .family<Map<DateTime, List<HomeEventItem>>, MonthKey>((ref, key) async {
-      final start = DateTime(key.year, key.month, 1);
-      final end = DateTime(key.year, key.month + 1, 1);
+      // .toUtc() vor dem Serialisieren: DateTime(y,m,d) ist ein lokaler
+      // Zeitpunkt, aber start_datetime ist eine timestamptz-Spalte — ohne
+      // .toUtc() serialisiert toIso8601String() ohne Offset/"Z", und
+      // PostgREST interpretiert das dann in der Session-Zeitzone der DB
+      // (UTC), nicht in der des Geräts. Ohne die Konvertierung würde die
+      // Monatsgrenze um die Zeitzonendifferenz verschoben.
+      final start = DateTime(key.year, key.month, 1).toUtc();
+      final end = DateTime(key.year, key.month + 1, 1).toUtc();
 
       final rows = await Supabase.instance.client
           .from('events')
@@ -122,26 +128,42 @@ final upcomingFavoriteEventsProvider =
       return events;
     });
 
+const _agendaPageSize = 200;
+
+/// [AsyncValue]-freundliches Ergebnis für [agendaEventsProvider]: die
+/// Gruppierung nach Tag plus, ob das 200er-Limit tatsächlich gegriffen hat
+/// (Anzahl zurückgegebener Zeilen == Limit) — die UI zeigt in diesem Fall
+/// einen Hinweis statt die Liste kommentarlos abzuschneiden.
+class AgendaEvents {
+  const AgendaEvents({required this.byDay, required this.truncated});
+
+  final Map<DateTime, List<HomeEventItem>> byDay;
+  final bool truncated;
+}
+
 /// Für den Agenda-Modus: chronologische Liste ab heute statt an einen
 /// Kalendermonat gebunden, mit Cap statt Datumsgrenze — bei Konzerten kein
 /// Bedarf für Pagination, ein Limit reicht als Schutz vor unbegrenztem Fetch.
-final agendaEventsProvider =
-    FutureProvider.autoDispose<Map<DateTime, List<HomeEventItem>>>((ref) async {
-      final now = DateTime.now();
-      final rows = await Supabase.instance.client
-          .from('events')
-          .select(_calendarEventColumns)
-          .eq('status', 'scheduled')
-          .gte('start_datetime', _dayKey(now).toIso8601String())
-          .order('start_datetime')
-          .limit(200);
+final agendaEventsProvider = FutureProvider.autoDispose<AgendaEvents>((
+  ref,
+) async {
+  final now = DateTime.now();
+  final rows = await Supabase.instance.client
+      .from('events')
+      .select(_calendarEventColumns)
+      .eq('status', 'scheduled')
+      // .toUtc(): siehe Kommentar bei monthEventsProvider — derselbe Bug
+      // ohne die Konvertierung.
+      .gte('start_datetime', _dayKey(now).toUtc().toIso8601String())
+      .order('start_datetime')
+      .limit(_agendaPageSize);
 
-      final byDay = <DateTime, List<HomeEventItem>>{};
-      for (final row in rows as List) {
-        final map = row as Map<String, dynamic>;
-        final item = HomeEventItem.fromRow(map);
-        if (item.startDateTime == null) continue;
-        byDay.putIfAbsent(_dayKey(item.startDateTime!), () => []).add(item);
-      }
-      return byDay;
-    });
+  final byDay = <DateTime, List<HomeEventItem>>{};
+  for (final row in rows as List) {
+    final map = row as Map<String, dynamic>;
+    final item = HomeEventItem.fromRow(map);
+    if (item.startDateTime == null) continue;
+    byDay.putIfAbsent(_dayKey(item.startDateTime!), () => []).add(item);
+  }
+  return AgendaEvents(byDay: byDay, truncated: rows.length >= _agendaPageSize);
+});

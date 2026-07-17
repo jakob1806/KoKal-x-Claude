@@ -241,7 +241,8 @@ class _FullAgendaList extends ConsumerWidget {
           style: TextStyle(color: colors.error),
         ),
       ),
-      data: (eventsByDay) {
+      data: (agenda) {
+        final eventsByDay = agenda.byDay;
         if (eventsByDay.isEmpty) {
           return Center(
             child: Padding(
@@ -256,13 +257,28 @@ class _FullAgendaList extends ConsumerWidget {
         }
 
         final days = eventsByDay.keys.toList()..sort();
+        // Bei Erreichen des Seiten-Limits (siehe agendaEventsProvider) gibt
+        // es einen Hinweis statt die Liste kommentarlos abzuschneiden — echte
+        // Pagination lohnt sich für Konzerttermine nicht, aber ein stiller
+        // Cutoff wäre irreführend.
+        final itemCount = days.length + (agenda.truncated ? 1 : 0);
         return ListView.builder(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.screenPaddingMobile,
             vertical: AppSpacing.md,
           ),
-          itemCount: days.length,
+          itemCount: itemCount,
           itemBuilder: (context, i) {
+            if (i >= days.length) {
+              return Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.lg),
+                child: Text(
+                  'Weitere Veranstaltungen vorhanden — bitte später erneut prüfen oder die Suche nutzen.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: colors.textTertiary, fontSize: 12.5),
+                ),
+              );
+            }
             final day = days[i];
             final events = eventsByDay[day]!;
             return Column(
