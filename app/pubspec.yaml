@@ -78,6 +78,10 @@ dependencies:
   shared_preferences: ^2.5.3
   geolocator: ^13.0.2
   device_calendar: ^4.3.3
+  # Direkte Abhängigkeit statt nur transitiv über device_calendar, weil
+  # calendar_sync_service.dart initializeTimeZones() selbst aufrufen muss
+  # (siehe dort) — Version an das bereits aufgelöste pubspec.lock gepinnt.
+  timezone: ^0.9.4
 
 dev_dependencies:
   flutter_test:
