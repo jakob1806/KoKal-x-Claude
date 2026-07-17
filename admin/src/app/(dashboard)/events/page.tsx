@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 // Event-Daten ändern sich häufig (Preise, Restkarten) — nie statisch cachen.
 export const dynamic = "force-dynamic";
 
+const PAGE_SIZE = 50;
+
 interface EventRow {
   id: string;
   slug: string;
@@ -11,6 +13,7 @@ interface EventRow {
   start_datetime: string;
   status: string;
   venues: { name: string } | null;
+  sources: { name: string } | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -21,14 +24,49 @@ const STATUS_LABEL: Record<string, string> = {
   draft: "Entwurf",
 };
 
-export default async function EventsPage() {
+// "all" ist kein echter events.status-Wert, sondern der Tab ohne Filter.
+const STATUS_TABS = [
+  { value: "draft", label: "Entwürfe" },
+  { value: "scheduled", label: "Geplant" },
+  { value: "all", label: "Alle" },
+] as const;
+
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; page?: string }>;
+}) {
+  const params = await searchParams;
+  // Entwürfe zuerst als Default: das ist review-pflichtiger Content aus der
+  // Ingestion-Pipeline (236 Stand heute Nacht) — der dringendste Fall beim
+  // Öffnen dieser Seite, nicht "alles chronologisch", das ihn bei .limit(50)
+  // komplett aus der sichtbaren Liste verdrängt hätte.
+  const status = params.status ?? "draft";
+  const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
   const supabase = await createClient();
-  const { data, error } = await supabase
+
+  let query = supabase
     .from("events")
-    .select("id, slug, title, start_datetime, status, venues(name)")
+    .select("id, slug, title, start_datetime, status, venues(name), sources(name)", { count: "exact" });
+  if (status !== "all") {
+    query = query.eq("status", status);
+  }
+  const { data, error, count } = await query
     .order("start_datetime", { ascending: true })
-    .limit(50)
+    .range(from, to)
     .returns<EventRow[]>();
+
+  const { data: statusCounts } = await supabase.from("events").select("status");
+  const countByStatus = new Map<string, number>();
+  for (const row of statusCounts ?? []) {
+    countByStatus.set(row.status, (countByStatus.get(row.status) ?? 0) + 1);
+  }
+  const totalCount = statusCounts?.length ?? 0;
+
+  const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
 
   return (
     <div className="p-8">
@@ -37,12 +75,40 @@ export default async function EventsPage() {
           <h1 className="text-xl font-semibold tracking-tight">Veranstaltungen</h1>
           <p className="text-sm text-neutral-500">Kommende Events, redaktionell prüfbar.</p>
         </div>
-        <Link
-          href="/events/new"
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
-        >
-          Neu anlegen
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/events/from-url"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            Von URL hinzufügen
+          </Link>
+          <Link
+            href="/events/new"
+            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            Neu anlegen
+          </Link>
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center gap-1 border-b border-neutral-200">
+        {STATUS_TABS.map((tab) => {
+          const tabCount = tab.value === "all" ? totalCount : (countByStatus.get(tab.value) ?? 0);
+          const isActive = status === tab.value;
+          return (
+            <Link
+              key={tab.value}
+              href={`/events?status=${tab.value}`}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+                isActive
+                  ? "border-neutral-900 text-neutral-900"
+                  : "border-transparent text-neutral-500 hover:text-neutral-700"
+              }`}
+            >
+              {tab.label} ({tabCount})
+            </Link>
+          );
+        })}
       </div>
 
       {error && (
@@ -55,55 +121,87 @@ export default async function EventsPage() {
       )}
 
       {!error && (
-        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Titel</th>
-                <th className="px-4 py-3 font-medium">Ort</th>
-                <th className="px-4 py-3 font-medium">Termin</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {data?.length ? (
-                data.map((event) => (
-                  <tr key={event.id} className="hover:bg-neutral-50">
-                    <td className="px-4 py-3 font-medium text-neutral-900">{event.title}</td>
-                    <td className="px-4 py-3 text-neutral-600">{event.venues?.name ?? "—"}</td>
-                    <td className="px-4 py-3 text-neutral-600 tabular-nums">
-                      {new Date(event.start_datetime).toLocaleString("de-DE", {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
-                        {STATUS_LABEL[event.status] ?? event.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/events/${event.id}`}
-                        className="text-sm font-medium text-neutral-700 hover:text-neutral-900"
-                      >
-                        Bearbeiten
-                      </Link>
+        <>
+          <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Titel</th>
+                  <th className="px-4 py-3 font-medium">Ort</th>
+                  <th className="px-4 py-3 font-medium">Termin</th>
+                  <th className="px-4 py-3 font-medium">Quelle</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {data?.length ? (
+                  data.map((event) => (
+                    <tr key={event.id} className="hover:bg-neutral-50">
+                      <td className="px-4 py-3 font-medium text-neutral-900">{event.title}</td>
+                      <td className="px-4 py-3 text-neutral-600">{event.venues?.name ?? "—"}</td>
+                      <td className="px-4 py-3 text-neutral-600 tabular-nums">
+                        {new Date(event.start_datetime).toLocaleString("de-DE", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500">{event.sources?.name ?? "manuell"}</td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
+                          {STATUS_LABEL[event.status] ?? event.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Link
+                          href={`/events/${event.id}`}
+                          className="text-sm font-medium text-neutral-700 hover:text-neutral-900"
+                        >
+                          Bearbeiten
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-neutral-400">
+                      {status === "all"
+                        ? "Noch keine Veranstaltungen. Seed-Daten via "
+                        : `Keine Veranstaltungen mit Status "${STATUS_LABEL[status] ?? status}". Seed-Daten via `}
+                      <code className="font-mono">supabase db reset</code> laden oder Import starten.
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-neutral-400">
-                    Noch keine Veranstaltungen. Seed-Daten via{" "}
-                    <code className="font-mono">supabase db reset</code> laden oder Import starten.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between text-sm text-neutral-500">
+              <span>
+                Seite {page} von {totalPages} ({count} Ergebnis{count === 1 ? "" : "se"})
+              </span>
+              <div className="flex gap-2">
+                {page > 1 && (
+                  <Link
+                    href={`/events?status=${status}&page=${page - 1}`}
+                    className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 hover:bg-neutral-50"
+                  >
+                    Zurück
+                  </Link>
+                )}
+                {page < totalPages && (
+                  <Link
+                    href={`/events?status=${status}&page=${page + 1}`}
+                    className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 hover:bg-neutral-50"
+                  >
+                    Weiter
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

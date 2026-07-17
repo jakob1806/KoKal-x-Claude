@@ -42,6 +42,10 @@ export function parseSchemaOrg(content: string): ParseResult {
       rawValues.push(parsed.value);
       return;
     }
+    // parsed.ok is false here (we returned above on true) — asserted rather
+    // than relying on narrowing, which some tsconfigs don't carry through
+    // this union cleanly (value: unknown appears to be a factor).
+    const firstError = (parsed as { ok: false; error: string }).error;
 
     // Some CMSs HTML-escape the JSON-LD script body (e.g. `&amp;` for `&`),
     // which is invalid per the HTML spec (script content is raw text) but
@@ -53,10 +57,6 @@ export function parseSchemaOrg(content: string): ParseResult {
       return;
     }
 
-    // parsed.ok is false here (we returned above on true) — asserted rather
-    // than relying on narrowing, which some tsconfigs don't carry through
-    // this union cleanly (value: unknown appears to be a factor).
-    const firstError = (parsed as { ok: false; error: string }).error;
     errors.push(`Failed to parse JSON-LD block ${i + 1}: ${firstError}`);
   });
 
