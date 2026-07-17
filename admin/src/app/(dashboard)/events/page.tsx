@@ -77,6 +77,12 @@ export default async function EventsPage({
         </div>
         <div className="flex items-center gap-3">
           <Link
+            href="/events/from-url"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            Von URL hinzufügen
+          </Link>
+          <Link
             href="/events/new"
             className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
           >
