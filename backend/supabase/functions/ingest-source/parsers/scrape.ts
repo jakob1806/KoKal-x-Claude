@@ -125,11 +125,20 @@ export function parseScrape(html: string, config: ScrapeConfig): ParseResult {
       // than its visible text — venueTagHrefPattern lets a config pick that
       // tag out instead of guessing from tag text alone. Falls back to
       // venueTagFallbackHrefPattern (e.g. the building-level location) if no
-      // room-level tag matches.
+      // room-level tag matches. An event can carry SEVERAL room tags at once
+      // (a festival spanning multiple halls) — if includeIfTagContains is
+      // itself being used as a room filter, prefer whichever room-pattern
+      // tag actually matches it over just the first one in DOM order, so a
+      // multi-room event gets attributed to the room it was filtered for
+      // rather than an arbitrary other room on the same event.
+      const roomMatches = config.venueTagHrefPattern
+        ? tags.filter((t) => t.href && new RegExp(config.venueTagHrefPattern!).test(t.href))
+        : [];
       let venueName: string | null = null;
-      if (config.venueTagHrefPattern) {
-        const re = new RegExp(config.venueTagHrefPattern);
-        venueName = tags.find((t) => t.href && re.test(t.href))?.text ?? null;
+      if (roomMatches.length > 0) {
+        const wanted = (config.includeIfTagContains ?? []).map((s) => s.toLowerCase());
+        venueName = roomMatches.find((t) => wanted.includes(t.text.toLowerCase()))?.text
+          ?? roomMatches[0].text;
       }
       if (!venueName && config.venueTagFallbackHrefPattern) {
         const re = new RegExp(config.venueTagFallbackHrefPattern);
