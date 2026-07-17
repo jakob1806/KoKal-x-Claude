@@ -14,6 +14,7 @@
 // in the actual Supabase Edge Runtime rather than vanilla Deno.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { parseBayernCloud } from "./parsers/bayerncloud.ts";
+import { isAllowedByRobots, USER_AGENT } from "../_shared/robots.ts";
 import { parseIcal } from "./parsers/ical.ts";
 import { parseRss } from "./parsers/rss.ts";
 import { parseScrape } from "./parsers/scrape.ts";
@@ -22,54 +23,6 @@ import type { ParseResult } from "./types.ts";
 import { upsertRawEvent } from "./write.ts";
 
 const SUPPORTED_TYPES = new Set(["schema_org", "ical", "rss", "scrape", "api"]);
-
-// Identifiziert diese App als Absender statt einen echten Browser
-// vorzutäuschen — Mindest-Transparenz für den scrape-Quellentyp (siehe
-// parsers/scrape.ts für den vollen Kontext zu dieser Produktentscheidung).
-const USER_AGENT = "KlassikMuenchenBot/1.0 (+event discovery app; contact via source venue)";
-
-/** Bestes-Bemühen robots.txt-Check: nur "Disallow"-Präfixe unter
- * "User-agent: *", keine Wildcards/Regex-Muster, kein Crawl-Delay. Deckt den
- * Normalfall ab; bei Fetch-Fehler wird konservativ NICHT blockiert (fehlende
- * robots.txt heißt "alles erlaubt"), aber ein echter Fund einer verbotenen
- * Regel blockiert zuverlässig. */
-async function isAllowedByRobots(targetUrl: string): Promise<boolean> {
-  let robotsUrl: string;
-  let path: string;
-  try {
-    const u = new URL(targetUrl);
-    robotsUrl = `${u.origin}/robots.txt`;
-    path = u.pathname || "/";
-  } catch {
-    return true;
-  }
-
-  let text: string;
-  try {
-    const res = await fetch(robotsUrl, { headers: { "User-Agent": USER_AGENT } });
-    if (!res.ok) return true;
-    text = await res.text();
-  } catch {
-    return true;
-  }
-
-  let inWildcardGroup = false;
-  const disallows: string[] = [];
-  for (const rawLine of text.split("\n")) {
-    const line = rawLine.split("#")[0].trim();
-    if (!line) continue;
-    const [field, ...rest] = line.split(":");
-    const value = rest.join(":").trim();
-    const key = field.trim().toLowerCase();
-    if (key === "user-agent") {
-      inWildcardGroup = value === "*";
-    } else if (key === "disallow" && inWildcardGroup && value) {
-      disallows.push(value);
-    }
-  }
-
-  return !disallows.some((rule) => path.startsWith(rule));
-}
 
 Deno.serve(async (req) => {
   let body: { source_id?: unknown };
