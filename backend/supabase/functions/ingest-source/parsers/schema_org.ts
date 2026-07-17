@@ -53,7 +53,11 @@ export function parseSchemaOrg(content: string): ParseResult {
       return;
     }
 
-    errors.push(`Failed to parse JSON-LD block ${i + 1}: ${parsed.error}`);
+    // parsed.ok is false here (we returned above on true) — asserted rather
+    // than relying on narrowing, which some tsconfigs don't carry through
+    // this union cleanly (value: unknown appears to be a factor).
+    const firstError = (parsed as { ok: false; error: string }).error;
+    errors.push(`Failed to parse JSON-LD block ${i + 1}: ${firstError}`);
   });
 
   if (scriptBlocks.length === 0 && rawValues.length === 0 && errors.length === 0) {

@@ -15,7 +15,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { parseIcal } from "./parsers/ical.ts";
 import { parseRss } from "./parsers/rss.ts";
-import { parseScrape } from "./parsers/scrape.ts";
+import { extractNextPageUrl, parseScrape } from "./parsers/scrape.ts";
 import { parseSchemaOrg } from "./parsers/schema_org.ts";
 import type { ParseResult } from "./types.ts";
 import { upsertRawEvent } from "./write.ts";
@@ -161,9 +161,40 @@ Deno.serve(async (req) => {
       case "rss":
         parsed = await parseRss(responseBody);
         break;
-      case "scrape":
+      case "scrape": {
         parsed = parseScrape(responseBody, source.config);
+        // Paginierung: manche Quellen (residenz-muenchen.de) haben keine
+        // vorhersagbare Seitennummer-URL-Systematik — der "nächste Seite"-
+        // Link muss also pro Seite verfolgt werden statt eine Ziel-URL zu
+        // berechnen. Bricht ab, sobald extractNextPageUrl() null liefert
+        // (kein nextPageSelector konfiguriert ODER letzte Seite erreicht)
+        // oder MAX_PAGES erreicht ist — kein unbegrenztes Nachladen.
+        const MAX_PAGES = 5;
+        let pageUrl = source.url;
+        let pageHtml = responseBody;
+        for (let page = 1; page < MAX_PAGES; page++) {
+          const nextUrl = extractNextPageUrl(pageHtml, source.config, pageUrl);
+          if (!nextUrl) break;
+          let nextRes: Response;
+          try {
+            nextRes = await fetch(nextUrl, { headers: { "User-Agent": USER_AGENT } });
+          } catch (err) {
+            parsed.errors.push(
+              `pagination: fetch of page ${page + 1} threw: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            break;
+          }
+          if (!nextRes.ok) {
+            parsed.errors.push(`pagination: fetch of page ${page + 1} failed: HTTP ${nextRes.status}`);
+            break;
+          }
+          pageHtml = await nextRes.text();
+          pageUrl = nextUrl;
+          const nextParsed = parseScrape(pageHtml, source.config);
+          parsed = { events: [...parsed.events, ...nextParsed.events], errors: [...parsed.errors, ...nextParsed.errors] };
+        }
         break;
+      }
       default:
         // Unreachable given the SUPPORTED_TYPES guard above, but keeps the
         // switch exhaustive without a non-null assertion.

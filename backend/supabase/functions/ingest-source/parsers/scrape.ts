@@ -84,6 +84,39 @@ export interface ScrapeConfig {
   venueAllowlist?: string[];
   /** Basis-URL zum Auflösen relativer href/src-Werte. */
   baseUrl?: string;
+  /** CSS-Selektor für einen "nächste Seite"-Link. Manche Quellen (z.B.
+   * residenz-muenchen.de) haben keine vorhersagbare Seitennummer-URL-
+   * Systematik (Seite 1 nutzt einen anderen Parameter-Wert als Seite 2), der
+   * Link muss also pro Seite aus dem jeweiligen HTML gelesen und verfolgt
+   * werden statt eine Ziel-URL zu berechnen — siehe extractNextPageUrl()
+   * und den Paginierungs-Loop in index.ts. Fehlt dieses Feld, wird nur eine
+   * einzelne Seite abgerufen (bisheriges Verhalten, keine Breaking Change
+   * für bestehende Quellen). */
+  nextPageSelector?: string;
+}
+
+/** Löst den "nächste Seite"-Link relativ zur AKTUELL abgerufenen Seiten-URL
+ * auf (nicht relativ zu config.baseUrl, das für Detail-/Bild-Links relativ
+ * zur Seitenwurzel gedacht ist — die nächste-Seite-URL ist typischerweise
+ * relativ zur aktuellen Suchergebnis-URL selbst, inklusive derselben
+ * Query-Parameter-Basis). Gibt null zurück, wenn kein nextPageSelector
+ * konfiguriert ist oder kein passendes Element mit href gefunden wird —
+ * beides beendet die Paginierung, kein Fehler. */
+export function extractNextPageUrl(
+  html: string,
+  config: ScrapeConfig,
+  currentPageUrl: string,
+): string | null {
+  if (!config.nextPageSelector) return null;
+  try {
+    const { document } = parseHTML(html);
+    const el = document.querySelector(config.nextPageSelector);
+    const href = el?.getAttribute?.("href");
+    if (!href) return null;
+    return new URL(href, currentPageUrl).toString();
+  } catch {
+    return null;
+  }
 }
 
 export function parseScrape(html: string, config: ScrapeConfig): ParseResult {
