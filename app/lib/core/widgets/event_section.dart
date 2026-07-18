@@ -27,7 +27,7 @@ class EventSection extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         SizedBox(
-          height: 148,
+          height: 164,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
