@@ -93,6 +93,27 @@ export interface ScrapeConfig {
    * einzelne Seite abgerufen (bisheriges Verhalten, keine Breaking Change
    * für bestehende Quellen). */
   nextPageSelector?: string;
+  /** Attribut, das die nächste Seite trägt, falls kein href (z.B. ein reiner
+   * JS-Button wie erzbistum-muenchen.de's `<button data-page="2">` ohne
+   * eigenen Link). Default "href". Element mit einem "disabled"-Attribut
+   * gilt als letzte Seite (kein Fehler, beendet nur die Paginierung). */
+  nextPageAttribute?: string;
+  /** Falls gesetzt, wird der gelesene Attributwert NICHT als relative URL
+   * aufgelöst, sondern als Wert für diesen Query-Parameter auf der
+   * AKTUELLEN Seiten-URL gesetzt (z.B. "_page" bei erzbistum-muenchen.de,
+   * das serverseitig nur `?_page=N` auswertet statt echte Seiten-Links zu
+   * rendern). */
+  nextPageParam?: string;
+  /** Millisekunden Pause vor jedem Paginierungs-Folgerequest — für Quellen,
+   * deren robots.txt einen Crawl-Delay nennt (z.B. erzbistum-muenchen.de:
+   * "Crawl-delay: 30"). Ohne dieses Feld kein Delay (bisheriges Verhalten). */
+  crawlDelayMs?: number;
+  /** Items verwerfen, deren Titel (kleingeschrieben) eine dieser
+   * Zeichenketten enthält — z.B. um einen gemischten Musik-Feed auf
+   * klassische Konzerte einzugrenzen (nicht-klassische Programmpunkte wie
+   * "Marktmusik" haben dort kein eigenes Tag/Kategorie-Feld, nur den
+   * Titeltext). Leer/fehlend = keine Filterung. */
+  titleExcludeIfContains?: string[];
 }
 
 /** Löst den "nächste Seite"-Link relativ zur AKTUELL abgerufenen Seiten-URL
@@ -111,9 +132,15 @@ export function extractNextPageUrl(
   try {
     const { document } = parseHTML(html);
     const el = document.querySelector(config.nextPageSelector);
-    const href = el?.getAttribute?.("href");
-    if (!href) return null;
-    return new URL(href, currentPageUrl).toString();
+    if (!el || el.hasAttribute?.("disabled")) return null;
+    const value = el.getAttribute?.(config.nextPageAttribute ?? "href");
+    if (!value) return null;
+    if (config.nextPageParam) {
+      const url = new URL(currentPageUrl);
+      url.searchParams.set(config.nextPageParam, value);
+      return url.toString();
+    }
+    return new URL(value, currentPageUrl).toString();
   } catch {
     return null;
   }
@@ -160,6 +187,12 @@ export function parseScrape(html: string, config: ScrapeConfig): ParseResult {
       if (!title) {
         errors.push(`${label}: no title found via "${config.titleSelector}", skipped`);
         return;
+      }
+      if (config.titleExcludeIfContains?.length) {
+        const titleLower = title.toLowerCase();
+        if (config.titleExcludeIfContains.some((s) => titleLower.includes(s.toLowerCase()))) {
+          return; // not an error — deliberately filtered out, e.g. non-classical items on a mixed feed
+        }
       }
 
       const url = config.urlSelector
