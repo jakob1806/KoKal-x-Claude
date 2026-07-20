@@ -27,7 +27,7 @@ final _eventProvider = FutureProvider.family<Map<String, dynamic>?, String>((
         start_datetime, duration_minutes, has_intermission,
         ticket_url, price_min, price_max, price_currency, is_free,
         website_url, accessibility, status, image_urls,
-        attribution_notice, attribution_license_url,
+        attribution_notice, attribution_license_url, last_verified_at,
         venues(id, slug, name, address_street, address_zip, address_city),
         organizers(name),
         event_genres(genres(id, slug, label_de)),
@@ -78,6 +78,9 @@ final _similarEventsProvider =
           .map((r) => HomeEventItem.fromRow(r as Map<String, dynamic>))
           .toList();
     });
+
+String _formatVerifiedDate(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
 const _statusLabel = {
   'scheduled': null,
@@ -396,14 +399,28 @@ class EventDetailScreen extends ConsumerWidget {
                             ],
                           ),
                         ],
-                        if (event['attribution_notice'] != null) ...[
+                        if (event['attribution_notice'] != null ||
+                            event['last_verified_at'] != null) ...[
                           const SizedBox(height: AppSpacing.xl),
-                          _AttributionNotice(
-                            notice: event['attribution_notice'] as String,
-                            licenseUrl:
-                                event['attribution_license_url'] as String?,
-                            colors: colors,
-                          ),
+                          if (event['attribution_notice'] != null)
+                            _AttributionNotice(
+                              notice: event['attribution_notice'] as String,
+                              licenseUrl:
+                                  event['attribution_license_url'] as String?,
+                              colors: colors,
+                            ),
+                          if (event['last_verified_at'] != null) ...[
+                            if (event['attribution_notice'] != null)
+                              const SizedBox(height: 2),
+                            Text(
+                              'Zuletzt geprüft: '
+                              '${_formatVerifiedDate(DateTime.parse(event['last_verified_at'] as String))}',
+                              style: TextStyle(
+                                color: colors.textTertiary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ],
                       ],
                     ),

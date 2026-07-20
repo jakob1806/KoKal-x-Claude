@@ -12,11 +12,15 @@ interface SourceRow {
   venue_id: string | null;
 }
 
+// eventId is present on every non-error outcome — index.ts uses it to track
+// which events a source's current run actually saw, so it can flag events
+// belonging to that source that went missing (see the cancellation-sweep
+// in index.ts / cancellation_candidates, 20260815000003).
 export type WriteOutcome =
-  | { outcome: "unchanged" }
-  | { outcome: "updated" }
-  | { outcome: "created" }
-  | { outcome: "flagged" }
+  | { outcome: "unchanged"; eventId: string }
+  | { outcome: "updated"; eventId: string }
+  | { outcome: "created"; eventId: string }
+  | { outcome: "flagged"; eventId: string }
   | { outcome: "error"; error: string };
 
 const DIFFABLE_FIELDS = [
@@ -83,9 +87,11 @@ export async function upsertRawEvent(
           if (touchError) {
             return { outcome: "error", error: `failed to refresh last_verified_at: ${touchError.message}` };
           }
-          return { outcome: "unchanged" };
+          return { outcome: "unchanged", eventId: existing.id };
         }
-        return await applyUpdate(supabase, existing, raw, contentHash, nowIso, source.id);
+        // Same source re-reporting the same external_id — authoritative,
+        // always trust its image.
+        return await applyUpdate(supabase, existing, raw, contentHash, nowIso, source.id, true);
       }
       // No row for this (source_id, external_id) yet — first time this
       // source has reported it. Still worth a fuzzy check: it may already
@@ -111,7 +117,15 @@ export async function upsertRawEvent(
         };
       }
 
-      const outcome = await applyUpdate(supabase, existing, raw, contentHash, nowIso, source.id);
+      // Cross-source fuzzy match (title/time/venue similarity, not a real
+      // identifier) — trusted enough to update text fields, but NOT to
+      // blindly accept a photo: a wrong match here previously stuck a
+      // mismatched image on the event permanently (image_urls is
+      // append-only, the app always shows image_urls[0]). Only fill the
+      // gap when the event has no photo yet; never overwrite/append one
+      // that's already there from a possibly-different, already-verified
+      // match.
+      const outcome = await applyUpdate(supabase, existing, raw, contentHash, nowIso, source.id, false);
       if (outcome.outcome !== "error") {
         // Backfill so future runs of THIS source hit the fast exact-match
         // path above. Guarded on source_id being null so we never steal
@@ -168,10 +182,10 @@ export async function upsertRawEvent(
           error: `created event ${created.id} but failed to flag as duplicate candidate: ${dupError.message}`,
         };
       }
-      return { outcome: "flagged" };
+      return { outcome: "flagged", eventId: created.id };
     }
 
-    return { outcome: "created" };
+    return { outcome: "created", eventId: created.id };
   } catch (err) {
     return { outcome: "error", error: err instanceof Error ? err.message : String(err) };
   }
@@ -186,13 +200,20 @@ async function applyUpdate(
   contentHash: string,
   nowIso: string,
   sourceId: string,
+  trustImage: boolean,
 ): Promise<WriteOutcome> {
   const updates = buildUpdatePayload(raw);
 
   if (raw.imageUrl) {
     const currentImages: string[] = Array.isArray(existing.image_urls) ? existing.image_urls : [];
-    if (!currentImages.includes(raw.imageUrl)) {
-      updates.image_urls = [...currentImages, raw.imageUrl];
+    if (trustImage) {
+      if (!currentImages.includes(raw.imageUrl)) {
+        updates.image_urls = [...currentImages, raw.imageUrl];
+      }
+    } else if (currentImages.length === 0) {
+      // Fuzzy-matched source and the event has no photo at all yet —
+      // safe to fill the gap, nothing to accidentally overwrite.
+      updates.image_urls = [raw.imageUrl];
     }
   }
 
@@ -223,7 +244,7 @@ async function applyUpdate(
     }
   }
 
-  return { outcome: "updated" };
+  return { outcome: "updated", eventId: existing.id };
 }
 
 /** Only includes keys the source actually provided a non-null value for —

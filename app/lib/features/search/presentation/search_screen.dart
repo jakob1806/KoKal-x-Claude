@@ -12,6 +12,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/event_filter_sheet.dart';
 import '../../../core/widgets/genre_artwork.dart';
 import '../../home/application/home_providers.dart';
+import '../application/directory_providers.dart';
 
 final _queryProvider = StateProvider<String>((ref) => '');
 
@@ -91,6 +92,29 @@ const _typeRoute = {
   'ensemble': '/ensemble',
   'venue': '/venue',
 };
+
+const _ensembleTypeLabel = {
+  'chor': 'Chor',
+  'orchester': 'Orchester',
+  'kammerensemble': 'Kammerensemble',
+  'big_band': 'Big Band',
+  'sonstiges': 'Ensemble',
+};
+
+const _personRoleLabel = {
+  'komponist': 'Komponist:in',
+  'dirigent': 'Dirigent:in',
+  'solist': 'Solist:in',
+  'chorleiter': 'Chorleiter:in',
+  'moderator': 'Moderator:in',
+};
+
+/// Ausgewählter Tab im Verzeichnis-Browser ("Künstler"/"Ensembles"/"Orte"),
+/// sichtbar solange kein Suchtext eingegeben ist. Nutzt dieselben
+/// Typ-Schlüssel wie _typeIcon/_typeRoute ('person'/'ensemble'/'venue').
+final _directoryTabProvider = StateProvider.autoDispose<String>(
+  (ref) => 'person',
+);
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -366,6 +390,7 @@ class _EmptyState extends ConsumerWidget {
     final trending =
         ref.watch(_trendingSearchesProvider).valueOrNull ?? const [];
     final suggestions = trending.isEmpty ? _fallbackSuggestions : trending;
+    final directoryTab = ref.watch(_directoryTabProvider);
 
     return ListView(
       children: [
@@ -422,6 +447,126 @@ class _EmptyState extends ConsumerWidget {
               )
               .toList(),
         ),
+        const SizedBox(height: AppSpacing.xl),
+        Text(
+          'Durchstöbern',
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(letterSpacing: 1),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'person', label: Text('Künstler')),
+            ButtonSegment(value: 'ensemble', label: Text('Ensembles')),
+            ButtonSegment(value: 'venue', label: Text('Orte')),
+          ],
+          selected: {directoryTab},
+          onSelectionChanged: (selection) =>
+              ref.read(_directoryTabProvider.notifier).state =
+                  selection.first,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _DirectoryEntries(type: directoryTab, colors: colors),
+      ],
+    );
+  }
+}
+
+class _DirectoryEntries extends ConsumerWidget {
+  const _DirectoryEntries({required this.type, required this.colors});
+
+  final String type;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AsyncValue<List<Map<String, dynamic>>> async = switch (type) {
+      'ensemble' => ref.watch(allEnsemblesProvider),
+      'venue' => ref.watch(allVenuesProvider),
+      _ => ref.watch(allPersonsProvider),
+    };
+
+    return async.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: Text(
+          'Laden fehlgeschlagen: $e',
+          style: TextStyle(color: colors.error),
+        ),
+      ),
+      data: (rows) => _DirectoryList(type: type, rows: rows, colors: colors),
+    );
+  }
+}
+
+class _DirectoryList extends StatelessWidget {
+  const _DirectoryList({
+    required this.type,
+    required this.rows,
+    required this.colors,
+  });
+
+  final String type;
+  final List<Map<String, dynamic>> rows;
+  final AppColorsExtension colors;
+
+  String _title(Map<String, dynamic> r) => switch (type) {
+    'ensemble' || 'venue' => r['name'] as String? ?? '',
+    _ => r['full_name'] as String? ?? '',
+  };
+
+  String? _subtitle(Map<String, dynamic> r) {
+    switch (type) {
+      case 'ensemble':
+        final t = r['type'] as String?;
+        return t == null ? null : (_ensembleTypeLabel[t] ?? t);
+      case 'venue':
+        return r['address_city'] as String?;
+      default:
+        final roles = (r['roles'] as List?)?.cast<String>() ?? [];
+        if (roles.isEmpty) return null;
+        return roles.map((role) => _personRoleLabel[role] ?? role).join(' · ');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: Text(
+          'Keine Einträge.',
+          style: TextStyle(color: colors.textTertiary, fontSize: 13),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (final r in rows)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(_typeIcon[type], color: colors.accentPrimary, size: 22),
+            title: Text(
+              _title(r),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: colors.textPrimary,
+              ),
+            ),
+            subtitle: _subtitle(r) != null
+                ? Text(
+                    _subtitle(r)!,
+                    style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
+                  )
+                : null,
+            onTap: () => context.push('${_typeRoute[type]}/${r['slug']}'),
+          ),
       ],
     );
   }

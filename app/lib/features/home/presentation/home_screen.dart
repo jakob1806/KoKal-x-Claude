@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -184,6 +185,11 @@ class _Hero extends StatelessWidget {
     );
     final start = DateTime.tryParse(event?['start_datetime'] as String? ?? '');
     final venueName = event?['venues']?['name'] as String?;
+    final imageUrls = event?['image_urls'] as List?;
+    final imageUrl = (imageUrls != null && imageUrls.isNotEmpty)
+        ? imageUrls.first as String?
+        : null;
+    final cardRadius = BorderRadius.circular(AppRadius.card);
 
     return GestureDetector(
       onTap: event == null
@@ -194,10 +200,21 @@ class _Hero extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            GenreArtwork(
-              genre: genre,
-              borderRadius: BorderRadius.circular(AppRadius.card),
-            ),
+            if (imageUrl != null)
+              CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                errorWidget: (context, url, error) =>
+                    GenreArtwork(genre: genre, borderRadius: cardRadius),
+                placeholder: (context, url) =>
+                    GenreArtwork(genre: genre, borderRadius: cardRadius),
+                imageBuilder: (context, imageProvider) => ClipRRect(
+                  borderRadius: cardRadius,
+                  child: Image(image: imageProvider, fit: BoxFit.cover),
+                ),
+              )
+            else
+              GenreArtwork(genre: genre, borderRadius: cardRadius),
             Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppRadius.card),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
@@ -14,6 +15,7 @@ class EventCard extends StatelessWidget {
     required this.title,
     required this.venueAndTime,
     required this.genre,
+    this.imageUrl,
     this.badgeLabel,
     this.onTap,
     this.width = 150,
@@ -24,6 +26,7 @@ class EventCard extends StatelessWidget {
   final String title;
   final String venueAndTime;
   final EventGenre genre;
+  final String? imageUrl;
   final String? badgeLabel;
   final VoidCallback? onTap;
   final double width;
@@ -43,10 +46,34 @@ class EventCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  GenreArtwork(
-                    genre: genre,
-                    borderRadius: BorderRadius.circular(AppRadius.cardImage),
-                  ),
+                  if (imageUrl != null)
+                    CachedNetworkImage(
+                      imageUrl: imageUrl!,
+                      fit: BoxFit.cover,
+                      errorWidget: (context, url, error) => GenreArtwork(
+                        genre: genre,
+                        borderRadius: BorderRadius.circular(
+                          AppRadius.cardImage,
+                        ),
+                      ),
+                      placeholder: (context, url) => GenreArtwork(
+                        genre: genre,
+                        borderRadius: BorderRadius.circular(
+                          AppRadius.cardImage,
+                        ),
+                      ),
+                      imageBuilder: (context, imageProvider) => ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          AppRadius.cardImage,
+                        ),
+                        child: Image(image: imageProvider, fit: BoxFit.cover),
+                      ),
+                    )
+                  else
+                    GenreArtwork(
+                      genre: genre,
+                      borderRadius: BorderRadius.circular(AppRadius.cardImage),
+                    ),
                   if (badgeLabel != null)
                     Positioned(
                       left: 8,

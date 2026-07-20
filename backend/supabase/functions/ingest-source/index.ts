@@ -188,21 +188,26 @@ Deno.serve(async (req) => {
   let unchanged = 0;
   let flagged = 0;
   const writeErrors: string[] = [...parsed.errors];
+  const seenEventIds: string[] = [];
 
   for (const raw of parsed.events) {
     const result = await upsertRawEvent(supabase, source, raw);
     switch (result.outcome) {
       case "created":
         created++;
+        seenEventIds.push(result.eventId);
         break;
       case "updated":
         updated++;
+        seenEventIds.push(result.eventId);
         break;
       case "unchanged":
         unchanged++;
+        seenEventIds.push(result.eventId);
         break;
       case "flagged":
         flagged++;
+        seenEventIds.push(result.eventId);
         break;
       case "error":
         writeErrors.push(`"${raw.title}": ${result.error}`);
@@ -219,6 +224,27 @@ Deno.serve(async (req) => {
     : succeeded < attempted
     ? "partial"
     : "success";
+
+  // Absage-Erkennung: nur für Quelltypen, die pro Lauf eine VOLLSTÄNDIGE
+  // Liste aller aktuellen Termine liefern (ical/rss/schema_org). "scrape"
+  // ist bewusst ausgeschlossen — MAX_PAGES=5 (oben) deckt nicht garantiert
+  // jede Seite ab, ein zu früh abgebrochener Lauf würde sonst noch
+  // existierende, nur nicht (erneut) gescrapte Events fälschlich als
+  // "verschwunden" markieren. "api" ebenso ausgeschlossen (Paginierung/
+  // Vollständigkeit nicht einheitlich garantiert über alle möglichen
+  // API-Quellen hinweg). "manual" betrifft ohnehin nur Einzel-URL-Importe,
+  // nie eine Liste. Zusätzlich: nur wenn dieser Lauf komplett fehlerfrei
+  // war (keine Parse-Fehler, jedes RawEvent erfolgreich geschrieben) —
+  // sonst könnte ein einzelner fehlgeschlagener Write ein weiterhin
+  // existierendes Event fälschlich als "verschwunden" erscheinen lassen.
+  const FULL_LISTING_TYPES = new Set(["ical", "rss", "schema_org"]);
+  if (
+    FULL_LISTING_TYPES.has(source.type) &&
+    parsed.errors.length === 0 &&
+    succeeded === attempted
+  ) {
+    await flagMissingEvents(supabase, source.id, seenEventIds);
+  }
 
   await finishRun(
     supabase,
@@ -282,6 +308,77 @@ async function finishRun(
     // Nothing more we can do — the run's own outcome already happened, this
     // would only affect the admin UI's visibility into it.
     console.error(`failed to finalize ingestion_runs ${runId}: ${error.message}`);
+  }
+}
+
+/** Findet events dieser Quelle, die im aktuellen Lauf nicht (mehr)
+ * vorkamen, und legt dafür einen cancellation_candidates-Eintrag zur
+ * redaktionellen Prüfung an (20260815000003) — setzt NIE direkt
+ * status='cancelled', das entscheidet die Redaktion im Admin-Dashboard.
+ * Der partial unique index auf (event_id) where status='pending' sorgt
+ * dafür, dass ein Event nicht bei jedem täglichen Lauf erneut geflaggt
+ * wird, solange der vorherige Kandidat noch nicht reviewt wurde. */
+async function flagMissingEvents(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  sourceId: string,
+  seenEventIds: string[],
+) {
+  let query = supabase
+    .from("events")
+    .select("id")
+    .eq("source_id", sourceId)
+    .eq("status", "scheduled");
+
+  // .not("id", "in", "()") ist ungültige Syntax bei einer leeren Liste —
+  // wenn nichts gesehen wurde (z.B. leerer Feed), einfach alle scheduled
+  // Events dieser Quelle als Kandidaten behandeln, ohne den in-Filter.
+  if (seenEventIds.length > 0) {
+    query = query.not("id", "in", `(${seenEventIds.join(",")})`);
+  }
+
+  const { data: missing, error } = await query;
+  if (error) {
+    console.error(`flagMissingEvents: lookup failed for source ${sourceId}: ${error.message}`);
+    return;
+  }
+  if (!missing || missing.length === 0) return;
+
+  // Supabase-js' .upsert({onConflict}) targets a plain unique constraint on
+  // the given column(s) — it can't address our PARTIAL unique index
+  // (event_id where status='pending'), so ON CONFLICT would either not
+  // match it at all or (worse) collide with an old, already-reviewed
+  // (non-pending) row for the same event and silently no-op there instead.
+  // Check-then-insert avoids that ambiguity entirely; the partial index
+  // still acts as a defensive DB-level backstop against a genuine race.
+  const { data: existingPending, error: existingError } = await supabase
+    .from("cancellation_candidates")
+    .select("event_id")
+    .eq("status", "pending")
+    .in("event_id", missing.map((e: { id: string }) => e.id));
+  if (existingError) {
+    console.error(
+      `flagMissingEvents: existing-candidate lookup failed for source ${sourceId}: ${existingError.message}`,
+    );
+    return;
+  }
+
+  const alreadyFlagged = new Set(
+    (existingPending ?? []).map((r: { event_id: string }) => r.event_id),
+  );
+  const toInsert = missing
+    .filter((e: { id: string }) => !alreadyFlagged.has(e.id))
+    .map((e: { id: string }) => ({
+      event_id: e.id,
+      source_id: sourceId,
+      reason: "missing_from_source",
+      status: "pending",
+    }));
+  if (toInsert.length === 0) return;
+
+  const { error: insertError } = await supabase.from("cancellation_candidates").insert(toInsert);
+  if (insertError) {
+    console.error(`flagMissingEvents: insert failed for source ${sourceId}: ${insertError.message}`);
   }
 }
 

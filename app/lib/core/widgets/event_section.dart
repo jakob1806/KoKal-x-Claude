@@ -43,6 +43,7 @@ class EventSection extends StatelessWidget {
                 title: e.title,
                 venueAndTime: e.venueAndTime,
                 genre: e.genre,
+                imageUrl: e.imageUrl,
                 badgeLabel: e.badge,
                 onTap: () => context.push('/event/${e.slug}'),
               );

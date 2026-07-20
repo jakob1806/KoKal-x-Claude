@@ -339,14 +339,15 @@ class _ErrorBanner extends StatelessWidget {
   }
 }
 
-class _VenuePreviewSheet extends StatelessWidget {
+class _VenuePreviewSheet extends ConsumerWidget {
   const _VenuePreviewSheet({required this.venue});
 
   final MapVenue venue;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.appColors;
+    final eventsAsync = ref.watch(venueUpcomingEventsProvider(venue.id));
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -374,6 +375,29 @@ class _VenuePreviewSheet extends StatelessWidget {
                   : 'Keine kommenden Veranstaltungen',
               style: TextStyle(color: colors.textTertiary, fontSize: 13),
             ),
+            if (venue.upcomingEventCount > 0)
+              eventsAsync.when(
+                data: (events) => events.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Column(
+                          children: [
+                            for (final event in events)
+                              _VenueSheetEventRow(event: event, colors: colors),
+                          ],
+                        ),
+                      ),
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                error: (_, _) => const SizedBox.shrink(),
+              ),
             const SizedBox(height: AppSpacing.lg),
             Row(
               children: [
@@ -405,4 +429,55 @@ class _VenuePreviewSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Kompakte Zeile für eine kommende Veranstaltung im Karten-Bottom-Sheet.
+/// Schließt das Sheet vor der Navigation, analog zum "Details ansehen"-
+/// Button oben und zu _VenueEventRow in venue_detail_screen.dart.
+class _VenueSheetEventRow extends StatelessWidget {
+  const _VenueSheetEventRow({required this.event, required this.colors});
+
+  final VenueUpcomingEvent event;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = event.startDateTime;
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(
+        event.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 13.5,
+          color: colors.textPrimary,
+        ),
+      ),
+      subtitle: start != null
+          ? Text(
+              _formatSheetDateTime(start),
+              style: TextStyle(color: colors.textSecondary, fontSize: 12),
+            )
+          : null,
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        size: 20,
+        color: colors.textTertiary,
+      ),
+      onTap: () {
+        Navigator.of(context).pop();
+        context.push('/event/${event.slug}');
+      },
+    );
+  }
+}
+
+String _formatSheetDateTime(DateTime d) {
+  final date = '${d.day}.${d.month}.${d.year}';
+  final time =
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  return '$date · $time';
 }

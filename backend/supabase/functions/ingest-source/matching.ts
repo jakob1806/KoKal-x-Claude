@@ -8,6 +8,8 @@ interface SourceRow {
   venue_id: string | null;
 }
 
+const MUNICH_PATTERN = /münchen|munich|muenchen/i;
+
 export async function resolveVenue(
   // deno-lint-ignore no-explicit-any
   supabase: any,
@@ -15,11 +17,32 @@ export async function resolveVenue(
   raw: RawEvent,
 ): Promise<{ venueId: string } | { error: string }> {
   if (source.venue_id) {
+    // Explicitly configured on the source — always trusted, no city check.
+    // Every source we run is either dedicated to one specific (Munich)
+    // venue this way, or has no venue_id and relies on the fuzzy path below.
     return { venueId: source.venue_id };
   }
 
   if (!raw.venueName) {
     return { error: "no venue_id on source and RawEvent has no venueName to match against" };
+  }
+
+  // München-Filter für externe Quellen ohne feste venue_id (z.B. ein
+  // Solist:innen-Tourkalender mit Terminen in mehreren Städten): venues
+  // enthält ausschließlich Münchner Spielstätten, ein Name-Fuzzy-Match kann
+  // also nie eine andere Stadt "treffen" — das Restrisiko ist ein falscher
+  // Positiv-Treffer, wenn ein generischer Venue-Name (z.B. "Konzerthaus")
+  // zufällig zu einer Münchner Venue passt, obwohl das Event laut Quelle
+  // tatsächlich in einer anderen Stadt stattfindet. Wenn die Quelle eine
+  // venueAddress mitliefert, die eindeutig NICHT München erwähnt, ist das
+  // ein stärkeres Signal als der Name-Match allein — dann lieber ablehnen
+  // (Event wird nicht angelegt) statt fälschlich einer Münchner Venue
+  // zuzuordnen.
+  if (raw.venueAddress && !MUNICH_PATTERN.test(raw.venueAddress)) {
+    return {
+      error:
+        `venueAddress '${raw.venueAddress}' does not mention München/Munich — refusing to match against a Munich-only venue list`,
+    };
   }
 
   const { data, error } = await supabase.rpc("find_matching_venue", {
