@@ -29,11 +29,34 @@ enum EventGenre {
   };
 }
 
+/// Passendes Icon je Genre — für kleine Kacheln (z.B. Kalender-Agenda), wo
+/// der reine Gradient allein zu wenig visuellen Halt gibt und wie eine
+/// leere/kaputte Fläche wirken kann.
+IconData genreIcon(EventGenre genre) => switch (genre) {
+  EventGenre.oper => Icons.theater_comedy_rounded,
+  EventGenre.orchester => Icons.piano_rounded,
+  EventGenre.chormusik => Icons.groups_rounded,
+  EventGenre.kirchenmusik => Icons.church_rounded,
+  _ => Icons.music_note_rounded,
+};
+
 class GenreArtwork extends StatelessWidget {
-  const GenreArtwork({required this.genre, this.borderRadius, super.key});
+  const GenreArtwork({
+    required this.genre,
+    this.borderRadius,
+    this.showIcon = false,
+    super.key,
+  });
 
   final EventGenre genre;
   final BorderRadius? borderRadius;
+
+  /// Zeigt ein zum Genre passendes Icon zentriert über dem Gradient — für
+  /// kleine Kacheln gedacht, wo der Gradient allein zu wenig Kontrast/
+  /// visuellen Halt hat (siehe [genreIcon]). Standardmäßig aus, damit
+  /// bestehende großflächige Verwendungen (Hero, EventCard) unverändert
+  /// bleiben.
+  final bool showIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +94,18 @@ class GenreArtwork extends StatelessWidget {
     };
     return ClipRRect(
       borderRadius: borderRadius ?? BorderRadius.circular(16),
-      child: Container(decoration: BoxDecoration(gradient: gradient)),
+      child: Container(
+        decoration: BoxDecoration(gradient: gradient),
+        child: showIcon
+            ? Center(
+                child: Icon(
+                  genreIcon(genre),
+                  color: Colors.white.withValues(alpha: 0.28),
+                  size: 22,
+                ),
+              )
+            : null,
+      ),
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/widgets/event_card.dart';
 import '../../../core/widgets/favorite_button.dart';
 import '../../../core/widgets/genre_artwork.dart';
 import '../../home/application/home_providers.dart';
@@ -55,6 +57,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       }
     }
     final dayAgenda = eventsByDay[_dayKey(_selectedDay)] ?? const [];
+
+    // Füllt den sonst leeren Platz unter einem dünn besetzten Tag mit einer
+    // Vorschau der nächsten Termine — nur die bereits geladenen Tage
+    // (aktueller Monat bzw. Woche), keine zusätzliche Datenabfrage.
+    final weekPreview = <HomeEventItem>[];
+    final upcomingDayKeys =
+        eventsByDay.keys
+            .where(
+              (d) =>
+                  !isSameDay(d, _selectedDay) &&
+                  !d.isBefore(_dayKey(DateTime.now())),
+            )
+            .toList()
+          ..sort();
+    for (final d in upcomingDayKeys) {
+      weekPreview.addAll(eventsByDay[d]!);
+      if (weekPreview.length >= 6) break;
+    }
 
     return SafeArea(
       child: Column(
@@ -130,22 +150,56 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 }),
                 onPageChanged: (focused) =>
                     setState(() => _focusedDay = focused),
-                headerStyle: const HeaderStyle(
+                daysOfWeekHeight: 20,
+                headerStyle: HeaderStyle(
                   formatButtonVisible: false,
                   titleCentered: true,
+                  titleTextStyle: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  leftChevronIcon: Icon(
+                    Icons.chevron_left_rounded,
+                    color: colors.textSecondary,
+                  ),
+                  rightChevronIcon: Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.textSecondary,
+                  ),
                 ),
-                calendarStyle: CalendarStyle(
-                  todayDecoration: BoxDecoration(
-                    color: colors.accentPrimary,
-                    shape: BoxShape.circle,
+                daysOfWeekStyle: DaysOfWeekStyle(
+                  weekdayStyle: TextStyle(
+                    color: colors.textTertiary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
-                  selectedDecoration: BoxDecoration(
-                    color: colors.accentSecondary,
-                    shape: BoxShape.circle,
+                  weekendStyle: TextStyle(
+                    color: colors.textTertiary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
-                  markerDecoration: BoxDecoration(
-                    color: colors.accentPrimary,
-                    shape: BoxShape.circle,
+                ),
+                calendarBuilders: CalendarBuilders(
+                  defaultBuilder: (context, day, focusedDay) => _DayCell(
+                    day: day,
+                    colors: colors,
+                    eventCount: (eventsByDay[_dayKey(day)] ?? const []).length,
+                  ),
+                  outsideBuilder: (context, day, focusedDay) =>
+                      _DayCell(day: day, colors: colors, dimmed: true),
+                  todayBuilder: (context, day, focusedDay) => _DayCell(
+                    day: day,
+                    colors: colors,
+                    isToday: true,
+                    eventCount: (eventsByDay[_dayKey(day)] ?? const []).length,
+                  ),
+                  selectedBuilder: (context, day, focusedDay) => _DayCell(
+                    day: day,
+                    colors: colors,
+                    isToday: isSameDay(day, DateTime.now()),
+                    isSelected: true,
+                    eventCount: (eventsByDay[_dayKey(day)] ?? const []).length,
                   ),
                 ),
               ),
@@ -159,6 +213,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 : _DayAgendaList(
                     day: _selectedDay,
                     events: dayAgenda,
+                    weekPreview: weekPreview.take(6).toList(),
                     isLoading: monthAsync.isLoading && !monthAsync.hasValue,
                     error: monthAsync.hasError ? monthAsync.error : null,
                   ),
@@ -173,12 +228,14 @@ class _DayAgendaList extends StatelessWidget {
   const _DayAgendaList({
     required this.day,
     required this.events,
+    required this.weekPreview,
     required this.isLoading,
     required this.error,
   });
 
   final DateTime day;
   final List<HomeEventItem> events;
+  final List<HomeEventItem> weekPreview;
   final bool isLoading;
   final Object? error;
 
@@ -198,27 +255,61 @@ class _DayAgendaList extends StatelessWidget {
         ),
       );
     }
-    if (events.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Text(
-            'Keine Veranstaltungen am $dayLabel.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: colors.textSecondary),
-          ),
-        ),
-      );
-    }
 
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.screenPaddingMobile,
         vertical: AppSpacing.md,
       ),
-      itemCount: events.length,
-      separatorBuilder: (_, __) => Divider(color: colors.separator, height: 1),
-      itemBuilder: (context, i) => _EventTile(event: events[i], colors: colors),
+      children: [
+        if (events.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+            child: Text(
+              'Keine Veranstaltungen am $dayLabel.',
+              style: TextStyle(color: colors.textSecondary),
+            ),
+          )
+        else
+          for (var i = 0; i < events.length; i++) ...[
+            if (i > 0) Divider(color: colors.separator, height: 1),
+            _EventTile(event: events[i], colors: colors),
+          ],
+        if (weekPreview.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            'Mehr diese Woche',
+            style: TextStyle(
+              color: colors.textTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            height: 164,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: weekPreview.length,
+              separatorBuilder: (_, __) =>
+                  const SizedBox(width: AppSpacing.cardGap),
+              itemBuilder: (context, i) {
+                final e = weekPreview[i];
+                return EventCard(
+                  eventId: e.id,
+                  title: e.title,
+                  venueAndTime: e.venueAndTime,
+                  genre: e.genre,
+                  imageUrl: e.imageUrl,
+                  badgeLabel: e.badge,
+                  onTap: () => context.push('/event/${e.slug}'),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -316,12 +407,31 @@ class _EventTile extends StatelessWidget {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 4),
       leading: SizedBox(
-        width: 48,
-        height: 48,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: GenreArtwork(genre: event.genre),
-        ),
+        width: 56,
+        height: 56,
+        child: event.imageUrl != null
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: event.imageUrl!,
+                  fit: BoxFit.cover,
+                  errorWidget: (context, url, error) => GenreArtwork(
+                    genre: event.genre,
+                    borderRadius: BorderRadius.circular(10),
+                    showIcon: true,
+                  ),
+                  placeholder: (context, url) => GenreArtwork(
+                    genre: event.genre,
+                    borderRadius: BorderRadius.circular(10),
+                    showIcon: true,
+                  ),
+                ),
+              )
+            : GenreArtwork(
+                genre: event.genre,
+                borderRadius: BorderRadius.circular(10),
+                showIcon: true,
+              ),
       ),
       title: Text(
         event.title,
@@ -340,6 +450,108 @@ class _EventTile extends StatelessWidget {
       ),
       trailing: FavoriteButton(eventId: event.id, size: 20),
       onTap: () => context.push('/event/${event.slug}'),
+    );
+  }
+}
+
+/// Ein Kalendertag: Zahl plus bis zu zwei dezente Punkte darunter, wenn
+/// Termine vorhanden sind — statt der vorherigen, kaum sichtbaren
+/// table_calendar-Standardmarker. "Heute" ist die einzige voll gefüllte
+/// Markierung, ein ausgewählter (aber nicht heutiger) Tag bekommt nur einen
+/// Ring, damit beide Zustände nicht optisch verschmelzen.
+class _DayCell extends StatelessWidget {
+  const _DayCell({
+    required this.day,
+    required this.colors,
+    this.isToday = false,
+    this.isSelected = false,
+    this.dimmed = false,
+    this.eventCount = 0,
+  });
+
+  final DateTime day;
+  final AppColorsExtension colors;
+  final bool isToday;
+  final bool isSelected;
+  final bool dimmed;
+  final int eventCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = dimmed
+        ? colors.textTertiary.withValues(alpha: 0.5)
+        : colors.textPrimary;
+
+    Widget number = Text(
+      '${day.day}',
+      style: TextStyle(fontSize: 13, color: textColor),
+    );
+
+    if (isToday) {
+      number = Container(
+        width: 24,
+        height: 24,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: colors.accentSecondary,
+          shape: BoxShape.circle,
+        ),
+        child: Text(
+          '${day.day}',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: colors.backgroundPrimary,
+          ),
+        ),
+      );
+    } else if (isSelected) {
+      number = Container(
+        width: 24,
+        height: 24,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: colors.accentPrimary, width: 1.5),
+        ),
+        child: Text(
+          '${day.day}',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: colors.textPrimary,
+          ),
+        ),
+      );
+    }
+
+    final showDots = !dimmed && eventCount > 0;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        number,
+        const SizedBox(height: 3),
+        SizedBox(
+          height: 4,
+          child: showDots
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < (eventCount > 1 ? 2 : 1); i++)
+                      Container(
+                        width: 4,
+                        height: 4,
+                        margin: EdgeInsets.only(left: i == 0 ? 0 : 3),
+                        decoration: BoxDecoration(
+                          color: colors.accentPrimary.withValues(alpha: 0.55),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                  ],
+                )
+              : null,
+        ),
+      ],
     );
   }
 }
