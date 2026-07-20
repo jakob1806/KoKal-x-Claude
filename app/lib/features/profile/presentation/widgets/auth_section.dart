@@ -6,6 +6,10 @@ import '../../../../core/auth/auth_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 
+/// Auf `true` setzen, sobald ein kostenpflichtiges Apple Developer Program
+/// vorhanden und Sign in with Apple im Supabase-Dashboard konfiguriert ist.
+const kAppleSignInAvailable = false;
+
 enum _Step { email, code }
 
 class AuthSection extends ConsumerStatefulWidget {
@@ -169,17 +173,23 @@ class _AuthSectionState extends ConsumerState<AuthSection> {
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
-        OutlinedButton.icon(
-          onPressed: _loading
-              ? null
-              : () => _oauth(AuthService.signInWithApple, 'Apple'),
-          icon: const Icon(Icons.apple, size: 20),
-          label: const Text('Mit Apple anmelden'),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(46),
+        // Sign in with Apple braucht ein kostenpflichtiges Apple Developer
+        // Program (Services-ID + Key für den Supabase-Dashboard-Provider) —
+        // solange das nicht vorhanden ist, würde der Button nur fehlschlagen.
+        // Auf `true` setzen, sobald das Programm eingerichtet ist.
+        if (kAppleSignInAvailable) ...[
+          OutlinedButton.icon(
+            onPressed: _loading
+                ? null
+                : () => _oauth(AuthService.signInWithApple, 'Apple'),
+            icon: const Icon(Icons.apple, size: 20),
+            label: const Text('Mit Apple anmelden'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(46),
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         OutlinedButton.icon(
           onPressed: _loading
               ? null

@@ -30,10 +30,15 @@ class PushService {
       return;
     }
 
-    final token = await _messaging.getToken();
-    if (token != null) {
-      await _saveToken(token);
-    }
+    // getToken() wirft auf iOS, solange kein APNs-Token vorliegt (z. B. ohne
+    // APNs-Auth-Key im Firebase-Projekt, siehe Klassenkommentar) — darf die
+    // App nicht zum Absturz bringen, Push bleibt dann einfach wirkungslos.
+    try {
+      final token = await _messaging.getToken();
+      if (token != null) {
+        await _saveToken(token);
+      }
+    } catch (_) {}
     _messaging.onTokenRefresh.listen(_saveToken);
 
     FirebaseMessaging.onMessage.listen((message) {

@@ -27,7 +27,7 @@ class EventSection extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         SizedBox(
-          height: 148,
+          height: 164,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
@@ -43,6 +43,7 @@ class EventSection extends StatelessWidget {
                 title: e.title,
                 venueAndTime: e.venueAndTime,
                 genre: e.genre,
+                imageUrl: e.imageUrl,
                 badgeLabel: e.badge,
                 onTap: () => context.push('/event/${e.slug}'),
               );

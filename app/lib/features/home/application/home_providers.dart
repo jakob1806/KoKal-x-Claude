@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/widgets/genre_artwork.dart';
 
 const _homeEventColumns =
-    'id, slug, title, subtitle, is_free, remaining_tickets_status, start_datetime, venues(name), event_genres(genres(slug))';
+    'id, slug, title, subtitle, is_free, remaining_tickets_status, start_datetime, image_urls, venues(name), event_genres(genres(slug))';
 
 String _formatDateTime(DateTime d) {
   final time =
@@ -26,6 +26,7 @@ class HomeEventItem {
     required this.startDateTime,
     this.venueId,
     this.badge,
+    this.imageUrl,
   });
 
   final String id;
@@ -36,6 +37,7 @@ class HomeEventItem {
   final DateTime? startDateTime;
   final String? venueId;
   final String? badge;
+  final String? imageUrl;
 
   factory HomeEventItem.fromRow(Map<String, dynamic> row) {
     final start = DateTime.tryParse(row['start_datetime'] as String? ?? '');
@@ -43,6 +45,7 @@ class HomeEventItem {
     final genreSlugs = (row['event_genres'] as List? ?? [])
         .map((g) => g['genres']?['slug'] as String?)
         .whereType<String>();
+    final imageUrls = row['image_urls'] as List?;
 
     String? badge;
     if (row['is_free'] == true) {
@@ -63,6 +66,9 @@ class HomeEventItem {
       startDateTime: start,
       venueId: row['venue_id'] as String?,
       badge: badge,
+      imageUrl: (imageUrls != null && imageUrls.isNotEmpty)
+          ? imageUrls.first as String?
+          : null,
     );
   }
 }

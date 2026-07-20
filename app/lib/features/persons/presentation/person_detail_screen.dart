@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -150,6 +151,38 @@ class PersonDetailScreen extends ConsumerWidget {
                       socialLinks:
                           person['social_links'] as Map<String, dynamic>?,
                     ),
+                    _BioSection(
+                      title: 'Repertoire-Schwerpunkte',
+                      entries: person['repertoire_highlights'] as List?,
+                      colors: colors,
+                      lineOf: (e) => [
+                        e['title'],
+                        e['note'],
+                      ].whereType<String>().join(' — '),
+                    ),
+                    _BioSection(
+                      title: 'Auszeichnungen',
+                      entries: person['awards'] as List?,
+                      colors: colors,
+                      lineOf: (e) => [
+                        [
+                          if (e['year'] != null) '${e['year']}',
+                          e['title'],
+                        ].whereType<String>().join(' · '),
+                        e['note'],
+                      ].whereType<String>().join(' — '),
+                    ),
+                    _BioSection(
+                      title: 'Bekannte Aufnahmen',
+                      entries: person['notable_recordings'] as List?,
+                      colors: colors,
+                      lineOf: (e) => [
+                        e['title'],
+                        e['label'],
+                        if (e['year'] != null) '${e['year']}',
+                      ].whereType<String>().join(' · '),
+                      urlOf: (e) => e['url'] as String?,
+                    ),
                     const SizedBox(height: AppSpacing.xxl),
                     Text(
                       'Kommende Veranstaltungen',
@@ -183,6 +216,78 @@ class PersonDetailScreen extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// Titelierter Abschnitt für strukturierte Bio-Listen (Repertoire,
+/// Auszeichnungen, Aufnahmen) — rendert nichts, wenn der jsonb-Array leer
+/// ist. `lineOf` formatiert einen Eintrag zu einer Zeile, `urlOf` macht die
+/// Zeile optional antippbar (z.B. Link zur Aufnahme).
+class _BioSection extends StatelessWidget {
+  const _BioSection({
+    required this.title,
+    required this.entries,
+    required this.colors,
+    required this.lineOf,
+    this.urlOf,
+  });
+
+  final String title;
+  final List<dynamic>? entries;
+  final AppColorsExtension colors;
+  final String Function(Map<String, dynamic>) lineOf;
+  final String? Function(Map<String, dynamic>)? urlOf;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = (entries ?? const []).cast<Map<String, dynamic>>();
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.xs),
+          for (final e in items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _BioEntryLine(
+                text: lineOf(e),
+                url: urlOf?.call(e),
+                colors: colors,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BioEntryLine extends StatelessWidget {
+  const _BioEntryLine({required this.text, required this.colors, this.url});
+
+  final String text;
+  final String? url;
+  final AppColorsExtension colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Text(
+      '·  $text',
+      style: TextStyle(
+        color: url != null ? colors.accentPrimary : colors.textPrimary,
+        fontSize: 13.5,
+        height: 1.4,
+      ),
+    );
+    if (url == null) return child;
+    return GestureDetector(
+      onTap: () =>
+          launchUrl(Uri.parse(url!), mode: LaunchMode.externalApplication),
+      child: child,
     );
   }
 }

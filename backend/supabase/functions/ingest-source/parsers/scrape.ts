@@ -370,13 +370,32 @@ const GERMAN_MONTHS_ABBR: Record<string, number> = {
 function parseFlexibleDate(raw: string): string | null {
   const text = raw.trim();
 
-  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  // Optionales 6. Capture-Group: "Z" oder ein expliziter "+HH:MM"/"-HHMM"-
+  // Offset. gasteig.de's <time datetime> ist naive Lokalzeit ohne Suffix
+  // (z.B. "2026-07-21 17:00") — dafür ist die Berlin-Offset-Ableitung
+  // unten korrekt. muenchen.hoertnagel.de dagegen liefert eine ECHTE UTC-
+  // Instanz mit "Z" (z.B. "2026-11-01T15:00:00Z" für 16:00 Ortszeit) — ohne
+  // diese Fallunterscheidung würde die Stunde fälschlich nochmal als
+  // Lokalzeit interpretiert und der Berlin-Offset ein zweites Mal
+  // draufgerechnet (1-2h Versatz).
+  const iso = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2})?)?(Z|[+-]\d{2}:?\d{2})?/,
+  );
   if (iso) {
     const year = parseInt(iso[1], 10);
     const month = parseInt(iso[2], 10);
     const day = parseInt(iso[3], 10);
     const hour = iso[4] !== undefined ? parseInt(iso[4], 10) : 0;
     const minute = iso[5] !== undefined ? parseInt(iso[5], 10) : 0;
+    if (iso[6]) {
+      const pad2 = (n: number) => n.toString().padStart(2, "0");
+      const offset = iso[6] === "Z"
+        ? "+00:00"
+        : iso[6].length === 5
+        ? `${iso[6].slice(0, 3)}:${iso[6].slice(3)}`
+        : iso[6];
+      return `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}:00${offset}`;
+    }
     return toBerlinIsoString(year, month, day, hour, minute);
   }
 
@@ -392,6 +411,27 @@ function parseFlexibleDate(raw: string): string | null {
     const hour = timeMatch ? parseInt(timeMatch[1], 10) : 0;
     const minute = timeMatch && timeMatch[2] !== undefined ? parseInt(timeMatch[2], 10) : 0;
     return toBerlinIsoString(year, month, day, hour, minute);
+  }
+
+  // Rein numerisches deutsches Kurzformat "TT.MM." ohne Jahr (z.B.
+  // muenchener-biennale.de: Kalenderliste zeigt nur "23.04.", Jahr steht nur
+  // im Seitentitel/Zeitraum, nicht pro Termin). Uhrzeit kommt hier über
+  // timeSelector als eigenes Element dazu (z.B. "18:00") und wird an den
+  // Datumstext angehängt, bevor geparst wird — Doppelpunkt statt "Uhr"
+  // unterscheidet die Uhrzeit zuverlässig von den Punkten im Datum selbst.
+  const numericGerman = text.match(/(\d{1,2})\.(\d{1,2})\.(?:(\d{4}))?/);
+  if (numericGerman) {
+    const day = parseInt(numericGerman[1], 10);
+    const month = parseInt(numericGerman[2], 10);
+    if (month >= 1 && month <= 12) {
+      const timeMatch = text.match(/(\d{1,2}):(\d{2})/);
+      const hour = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+      const minute = timeMatch ? parseInt(timeMatch[2], 10) : 0;
+      const year = numericGerman[3]
+        ? parseInt(numericGerman[3], 10)
+        : inferYear(month, day, hour, minute);
+      return toBerlinIsoString(year, month, day, hour, minute);
+    }
   }
 
   // No period-after-day and no 4-digit year, e.g. "Fr 24 Jul" — the leading

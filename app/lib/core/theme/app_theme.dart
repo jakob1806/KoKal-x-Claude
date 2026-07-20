@@ -95,6 +95,15 @@ class AppTheme {
         backgroundColor: palette.glass,
         indicatorColor: palette.accentPrimary.withValues(alpha: 0.14),
         surfaceTintColor: Colors.transparent,
+        // Explizit statt Material-3-Default: ohne das hier landet die
+        // Icon-Farbe im ausgewählten Zustand zu nah am (ebenfalls roten)
+        // Indicator-Hintergrund und das Icon verschwindet optisch.
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final active = states.contains(WidgetState.selected);
+          return IconThemeData(
+            color: active ? palette.accentPrimary : palette.textTertiary,
+          );
+        }),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final active = states.contains(WidgetState.selected);
           return AppTypography.caption.copyWith(

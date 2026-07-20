@@ -1,0 +1,39 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// Datenquellen für den Verzeichnis-Browser im Suchtab (Tab "Künstler" /
+/// "Ensembles" / "Orte", sichtbar solange keine Sucheingabe erfolgt ist).
+///
+/// Die Tabellen sind klein (persons ~28, ensembles ~32, venues ~37 Zeilen),
+/// daher genügt ein vollständiger, alphabetisch sortierter Read ohne
+/// Pagination.
+
+/// Alle Personen alphabetisch nach Name.
+final allPersonsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+      final rows = await Supabase.instance.client
+          .from('persons')
+          .select('id, slug, full_name, roles')
+          .order('full_name');
+      return (rows as List).cast<Map<String, dynamic>>();
+    });
+
+/// Alle Ensembles alphabetisch nach Name.
+final allEnsemblesProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+      final rows = await Supabase.instance.client
+          .from('ensembles')
+          .select('id, slug, name, type')
+          .order('name');
+      return (rows as List).cast<Map<String, dynamic>>();
+    });
+
+/// Alle Orte alphabetisch nach Name.
+final allVenuesProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+      final rows = await Supabase.instance.client
+          .from('venues')
+          .select('id, slug, name, address_city')
+          .order('name');
+      return (rows as List).cast<Map<String, dynamic>>();
+    });
