@@ -148,6 +148,13 @@ Deno.serve(async (req) => {
         for (let page = 1; page < MAX_PAGES; page++) {
           const nextUrl = extractNextPageUrl(pageHtml, source.config, pageUrl);
           if (!nextUrl) break;
+          // robots.txt einiger Quellen (z.B. erzbistum-muenchen.de) nennt
+          // einen Crawl-Delay — der gilt pro Request, also auch zwischen den
+          // Folgeseiten innerhalb dieses einen Laufs.
+          const delayMs = source.config?.crawlDelayMs;
+          if (typeof delayMs === "number" && delayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
           let nextRes: Response;
           try {
             nextRes = await fetch(nextUrl, { headers: { "User-Agent": USER_AGENT } });
