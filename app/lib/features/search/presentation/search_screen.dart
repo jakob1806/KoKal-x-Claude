@@ -463,8 +463,7 @@ class _EmptyState extends ConsumerWidget {
           ],
           selected: {directoryTab},
           onSelectionChanged: (selection) =>
-              ref.read(_directoryTabProvider.notifier).state =
-                  selection.first,
+              ref.read(_directoryTabProvider.notifier).state = selection.first,
         ),
         const SizedBox(height: AppSpacing.sm),
         _DirectoryEntries(type: directoryTab, colors: colors),
@@ -551,7 +550,11 @@ class _DirectoryList extends StatelessWidget {
         for (final r in rows)
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(_typeIcon[type], color: colors.accentPrimary, size: 22),
+            leading: Icon(
+              _typeIcon[type],
+              color: colors.accentPrimary,
+              size: 22,
+            ),
             title: Text(
               _title(r),
               style: TextStyle(
@@ -562,7 +565,10 @@ class _DirectoryList extends StatelessWidget {
             subtitle: _subtitle(r) != null
                 ? Text(
                     _subtitle(r)!,
-                    style: TextStyle(color: colors.textSecondary, fontSize: 12.5),
+                    style: TextStyle(
+                      color: colors.textSecondary,
+                      fontSize: 12.5,
+                    ),
                   )
                 : null,
             onTap: () => context.push('${_typeRoute[type]}/${r['slug']}'),
