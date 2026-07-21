@@ -1,6 +1,6 @@
 // Reichert bestehende Events nachträglich mit Komponisten/Werken/Mitwirkenden
-// an: liest title+description_de, schickt sie an die Anthropic API (dasselbe
-// forced-tool-call-Muster wie extract-event-from-url/llm.ts), matcht die
+// an: liest title+description_de, schickt sie an die Gemini API (dasselbe
+// forced-function-call-Muster wie extract-event-from-url/llm.ts), matcht die
 // erkannten Namen gegen persons/ensembles/works (case-insensitive exact
 // match — bewusst kein Fuzzy-Matching, um keine unterschiedlichen Personen
 // versehentlich zusammenzulegen) und verknüpft über event_works /
@@ -19,31 +19,31 @@
 // haben. Mehrfacher Aufruf nötig, um alle 238 Events abzudecken (Edge
 // Function Zeitlimit).
 //
-// Braucht ANTHROPIC_API_KEY als Supabase-Secret (siehe
-// extract-event-from-url/llm.ts für Setup).
+// Braucht GEMINI_API_KEY als Supabase-Secret (siehe _shared/gemini.ts für
+// Setup — Gemini statt Anthropic wegen dessen dauerhaftem Gratis-Kontingent).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiFunction, type GeminiFunctionDeclaration } from "../_shared/gemini.ts";
 
-const ANTHROPIC_MODEL = "claude-haiku-4-5-20251001";
-
-const ENRICH_TOOL = {
+const ENRICH_FUNCTION: GeminiFunctionDeclaration = {
   name: "extract_references",
   description: "Aus Titel+Beschreibung eines Konzerts erkannte Komponisten, Werke und Mitwirkende.",
-  input_schema: {
-    type: "object",
+  parameters: {
+    type: "OBJECT",
     properties: {
       works: {
-        type: "array",
+        type: "ARRAY",
         description:
           "Nur konkrete, benannte Werke (z. B. 'Symphonie Nr. 5', 'Matthäus-Passion'). " +
           "KEINEN Eintrag erzeugen, wenn nur ein Komponisten-Nachname ohne erkennbares " +
           "spezifisches Werk im Text steht — dann leer lassen statt zu raten.",
         items: {
-          type: "object",
+          type: "OBJECT",
           properties: {
-            title: { type: "string" },
+            title: { type: "STRING" },
             composerName: {
-              type: ["string", "null"],
+              type: "STRING",
+              nullable: true,
               description: "Voller Name des Komponisten, falls erkennbar (z. B. 'Johannes Brahms').",
             },
           },
@@ -51,27 +51,29 @@ const ENRICH_TOOL = {
         },
       },
       participants: {
-        type: "array",
+        type: "ARRAY",
         description:
           "Auftretende Personen/Ensembles. NIEMALS Ticketing-Agenturen, Konzertdirektionen, " +
           "Veranstalter-GmbHs oder Spielstätten hier eintragen (z. B. 'MünchenMusik GmbH & Co. KG', " +
           "'Bell' Arte Konzertdirektion' sind KEINE Mitwirkenden) — nur echte Musiker/Ensembles.",
         items: {
-          type: "object",
+          type: "OBJECT",
           properties: {
-            name: { type: "string" },
-            type: { type: "string", enum: ["person", "ensemble"] },
+            name: { type: "STRING" },
+            type: { type: "STRING", enum: ["person", "ensemble"] },
             role: {
-              type: ["string", "null"],
-              enum: ["komponist", "dirigent", "solist", "chorleiter", "moderator", null],
+              type: "STRING",
+              nullable: true,
+              enum: ["komponist", "dirigent", "solist", "chorleiter", "moderator"],
               description: "Nur setzen, wenn im Text erkennbar; sonst null (z. B. ein einfach mitspielendes Orchester).",
             },
             ensembleType: {
-              type: ["string", "null"],
-              enum: ["chor", "orchester", "kammerensemble", "big_band", "sonstiges", null],
+              type: "STRING",
+              nullable: true,
+              enum: ["chor", "orchester", "kammerensemble", "big_band", "sonstiges"],
               description: "Nur bei type=ensemble relevant.",
             },
-            instrument: { type: ["string", "null"] },
+            instrument: { type: "STRING", nullable: true },
           },
           required: ["name", "type"],
         },
@@ -87,11 +89,6 @@ interface EventRow {
   description_de: string | null;
 }
 
-// deno-lint-ignore no-explicit-any
-function isRecord(v: unknown): v is Record<string, any> {
-  return v != null && typeof v === "object";
-}
-
 async function extractReferences(
   apiKey: string,
   title: string,
@@ -99,45 +96,24 @@ async function extractReferences(
 ): Promise<{ works: Array<{ title: string; composerName: string | null }>; participants: Array<{ name: string; type: string; role: string | null; ensembleType: string | null; instrument: string | null }> } | null> {
   const text = `Titel: ${title}${description ? `\nBeschreibung: ${description}` : ""}`;
 
-  let res: Response;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 1024,
-        system:
-          "Du extrahierst Komponisten, Werke und Mitwirkende aus Titel/Beschreibung eines " +
-          "klassischen Konzerts. Sei konservativ: lieber ein leeres Array als geraten.",
-        messages: [{ role: "user", content: text }],
-        tools: [ENRICH_TOOL],
-        tool_choice: { type: "tool", name: "extract_references" },
-      }),
-    });
-  } catch {
-    return null;
-  }
-  if (!res.ok) return null;
+  const args = await callGeminiFunction(
+    apiKey,
+    "Du extrahierst Komponisten, Werke und Mitwirkende aus Titel/Beschreibung eines " +
+      "klassischen Konzerts. Sei konservativ: lieber ein leeres Array als geraten.",
+    text,
+    ENRICH_FUNCTION,
+  );
+  if (!args) return null;
 
-  const data = await res.json();
-  const blocks = Array.isArray(data.content) ? data.content : [];
-  const toolUse = blocks.find((b: unknown) => isRecord(b) && b.type === "tool_use" && b.name === "extract_references");
-  if (!toolUse || !isRecord(toolUse.input)) return null;
-
-  const works = Array.isArray(toolUse.input.works) ? toolUse.input.works : [];
-  const participants = Array.isArray(toolUse.input.participants) ? toolUse.input.participants : [];
+  const works = Array.isArray(args.works) ? args.works : [];
+  const participants = Array.isArray(args.participants) ? args.participants : [];
   return { works, participants };
 }
 
 Deno.serve(async (req) => {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY nicht gesetzt" }), { status: 500 });
+    return new Response(JSON.stringify({ error: "GEMINI_API_KEY nicht gesetzt" }), { status: 500 });
   }
 
   let body: { limit?: unknown };
