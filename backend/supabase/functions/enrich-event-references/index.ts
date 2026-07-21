@@ -239,7 +239,7 @@ Deno.serve(async (req) => {
   for (const event of candidates) {
     const extracted = await extractReferences(apiKey, event.title, event.description_de);
     if (!extracted) {
-      errors.push(`"${event.title}": Anthropic-Aufruf fehlgeschlagen`);
+      errors.push(`"${event.title}": Gemini-Aufruf fehlgeschlagen`);
       continue;
     }
 
