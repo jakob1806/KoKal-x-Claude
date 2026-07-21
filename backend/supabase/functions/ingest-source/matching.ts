@@ -6,6 +6,8 @@ import type { RawEvent } from "./types.ts";
 interface SourceRow {
   id: string;
   venue_id: string | null;
+  person_id?: string | null;
+  ensemble_id?: string | null;
 }
 
 const MUNICH_PATTERN = /münchen|munich|muenchen/i;
@@ -67,11 +69,13 @@ export async function findEventMatch(
   title: string,
   venueId: string,
   startDateTime: string,
+  castNames?: string[] | null,
 ): Promise<{ id: string; similarity: number } | null> {
   const { data, error } = await supabase.rpc("find_matching_event", {
     p_title: title,
     p_venue_id: venueId,
     p_start_datetime: startDateTime,
+    p_cast_names: castNames && castNames.length > 0 ? castNames : null,
   });
 
   if (error) {

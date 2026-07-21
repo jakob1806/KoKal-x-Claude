@@ -11,6 +11,8 @@ function readSourceFields(formData: FormData) {
     url: String(formData.get("url") ?? "").trim(),
     venue_id: String(formData.get("venue_id") ?? "") || null,
     organizer_id: String(formData.get("organizer_id") ?? "") || null,
+    person_id: String(formData.get("person_id") ?? "") || null,
+    ensemble_id: String(formData.get("ensemble_id") ?? "") || null,
     crawl_frequency_minutes: Number(formData.get("crawl_frequency_minutes") ?? 1440),
     legal_basis: String(formData.get("legal_basis") ?? "").trim() || null,
     status: String(formData.get("status") ?? "active"),

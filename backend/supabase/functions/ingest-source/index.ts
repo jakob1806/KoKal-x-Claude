@@ -42,19 +42,37 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   );
 
+  const { httpStatus, body: responseBody } = await runIngestion(supabase, sourceId);
+  return jsonResponse(responseBody, httpStatus);
+});
+
+/** Führt einen kompletten Ingestion-Lauf für eine Quelle aus — der eigentliche
+ * Kern, den bisher nur der Deno.serve-Handler oben direkt aufrufen konnte.
+ * Als eigene, exportierte Funktion extrahiert, damit run-all-sources/index.ts
+ * (der neue nebenläufige Orchestrator) sie in-process aufrufen kann, ohne
+ * einen HTTP-Roundtrip auf sich selbst zu machen. */
+export async function runIngestion(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  sourceId: string,
+): Promise<{ httpStatus: number; body: Record<string, unknown> }> {
+  function result(body: Record<string, unknown>, httpStatus = 200) {
+    return { httpStatus, body };
+  }
+
   const { data: source, error: sourceError } = await supabase
     .from("sources")
-    .select("id, name, type, url, venue_id, config")
+    .select("id, name, type, url, venue_id, organizer_id, person_id, ensemble_id, config")
     .eq("id", sourceId)
     .maybeSingle();
   // deno-lint-ignore no-explicit-any
   const config = (source?.config ?? {}) as Record<string, any>;
 
   if (sourceError) {
-    return jsonResponse({ error: `failed to load source: ${sourceError.message}` }, 500);
+    return result({ error: `failed to load source: ${sourceError.message}` }, 500);
   }
   if (!source) {
-    return jsonResponse({ error: `source ${sourceId} not found` }, 404);
+    return result({ error: `source ${sourceId} not found` }, 404);
   }
 
   const { data: run, error: runError } = await supabase
@@ -64,7 +82,7 @@ Deno.serve(async (req) => {
     .single();
 
   if (runError || !run) {
-    return jsonResponse(
+    return result(
       { error: `failed to create ingestion_runs row: ${runError?.message ?? "unknown"}` },
       500,
     );
@@ -75,7 +93,7 @@ Deno.serve(async (req) => {
       `ingestion type '${source.type}' is not supported by the automatic worker (manual/api require separate handling)`;
     await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
     await touchSource(supabase, source.id, false);
-    return jsonResponse({ status: "failed", error: message }, 422);
+    return result({ status: "failed", error: message }, 422);
   }
 
   if (source.type === "scrape") {
@@ -84,7 +102,7 @@ Deno.serve(async (req) => {
       const message = `robots.txt disallows fetching ${source.url} — refusing to scrape`;
       await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
       await touchSource(supabase, source.id, false);
-      return jsonResponse({ status: "failed", error: message }, 403);
+      return result({ status: "failed", error: message }, 403);
     }
   }
 
@@ -100,27 +118,82 @@ Deno.serve(async (req) => {
       const message = `source.config.authHeaderEnvVar is "${config.authHeaderEnvVar}", but no such Supabase secret is set`;
       await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
       await touchSource(supabase, source.id, false);
-      return jsonResponse({ status: "failed", error: message }, 500);
+      return result({ status: "failed", error: message }, 500);
     }
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  // HTTP-Caching: viele Quellen unterstützen ETag/Last-Modified, manche
+  // (v.a. einzelne Künstler-/Ensemble-Seiten) gar keine Cache-Header — dafür
+  // zusätzlich ein Body-Hash-Fallback (siehe unten). httpCache lebt in
+  // sources.config statt einer eigenen Spalte, konsistent mit dem
+  // bestehenden config.authHeaderEnvVar-Muster.
+  const httpCache = (config.httpCache ?? {}) as {
+    etag?: string;
+    lastModified?: string;
+    lastBodyHash?: string;
+  };
+  if (httpCache.etag) headers["If-None-Match"] = httpCache.etag;
+  if (httpCache.lastModified) headers["If-Modified-Since"] = httpCache.lastModified;
+
   let responseBody: string;
+  let responseEtag: string | null = null;
+  let responseLastModified: string | null = null;
   try {
     const res = await fetch(source.url, { headers });
+
+    if (res.status === 304) {
+      // Server bestätigt: seit dem letzten Lauf unverändert — Parsen/
+      // Schreiben komplett überspringen. flagMissingEvents() wird bewusst
+      // NICHT aufgerufen (kein seenEventIds für diesen Lauf vorhanden), das
+      // würde sonst fälschlich alles als "verschwunden" markieren.
+      await finishRun(supabase, run.id, "skipped_unchanged", { events_found: 0 }, []);
+      await touchSource(supabase, source.id, true);
+      return result({ status: "skipped_unchanged", events_found: 0 });
+    }
+
     if (!res.ok) {
       const message = `fetch failed: HTTP ${res.status} ${res.statusText}`;
       await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
       await touchSource(supabase, source.id, false);
-      return jsonResponse({ status: "failed", error: message }, 502);
+      return result({ status: "failed", error: message }, 502);
     }
+    responseEtag = res.headers.get("etag");
+    responseLastModified = res.headers.get("last-modified");
     responseBody = await res.text();
   } catch (err) {
     const message = `fetch threw: ${err instanceof Error ? err.message : String(err)}`;
     await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
     await touchSource(supabase, source.id, false);
-    return jsonResponse({ status: "failed", error: message }, 502);
+    return result({ status: "failed", error: message }, 502);
   }
+
+  // Fallback für Quellen ohne (verlässliche) ETag/Last-Modified-Header
+  // (die meisten Künstler-/Ensemble-Seiten): Hash über den Response-Body,
+  // Vergleich gegen den zuletzt gespeicherten Wert. Auch hier: bei
+  // Übereinstimmung komplett überspringen statt nur den (in Phase 1 noch
+  // gar nicht vorhandenen) teuren LLM-Schritt — aus denselben Gründen wie
+  // beim 304-Fall oben.
+  const bodyHash = await sha256Hex(responseBody);
+  if (!responseEtag && !responseLastModified && httpCache.lastBodyHash === bodyHash) {
+    await finishRun(supabase, run.id, "skipped_unchanged", { events_found: 0 }, []);
+    await touchSource(supabase, source.id, true);
+    return result({ status: "skipped_unchanged", events_found: 0 });
+  }
+
+  await supabase
+    .from("sources")
+    .update({
+      config: {
+        ...config,
+        httpCache: {
+          etag: responseEtag ?? undefined,
+          lastModified: responseLastModified ?? undefined,
+          lastBodyHash: bodyHash,
+        },
+      },
+    })
+    .eq("id", source.id);
 
   let parsed: ParseResult;
   try {
@@ -187,7 +260,7 @@ Deno.serve(async (req) => {
     const message = `parser threw: ${err instanceof Error ? err.message : String(err)}`;
     await finishRun(supabase, run.id, "failed", { events_found: 0 }, [message]);
     await touchSource(supabase, source.id, false);
-    return jsonResponse({ status: "failed", error: message }, 500);
+    return result({ status: "failed", error: message }, 500);
   }
 
   let created = 0;
@@ -267,7 +340,7 @@ Deno.serve(async (req) => {
   );
   await touchSource(supabase, source.id, status !== "failed");
 
-  return jsonResponse({
+  return result({
     status,
     events_found: attempted,
     events_created: created,
@@ -276,7 +349,15 @@ Deno.serve(async (req) => {
     events_flagged_for_review: flagged,
     error_count: writeErrors.length,
   });
-});
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -289,7 +370,7 @@ async function finishRun(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   runId: string,
-  status: "success" | "partial" | "failed",
+  status: "success" | "partial" | "failed" | "skipped_unchanged",
   counts: {
     events_found: number;
     events_created?: number;

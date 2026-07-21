@@ -3,8 +3,16 @@
 // forced-tool-call-Muster wie extract-event-from-url/llm.ts), matcht die
 // erkannten Namen gegen persons/ensembles/works (case-insensitive exact
 // match — bewusst kein Fuzzy-Matching, um keine unterschiedlichen Personen
-// versehentlich zusammenzulegen), legt fehlende Einträge an und verknüpft
-// über event_works / event_participants.
+// versehentlich zusammenzulegen) und verknüpft über event_works /
+// event_participants. Unbekannte Personen/Ensembles werden NICHT mehr
+// direkt angelegt (das passierte hier früher ungeprüft) — sie landen als
+// entity_candidates zur redaktionellen Freigabe
+// (20260818000004_entity_candidates.sql); die event_participants-
+// Verknüpfung für so einen Act folgt erst nach Freigabe bei einem
+// erneuten Lauf. Komponisten von Werken bleiben davon unberührt: ein noch
+// nicht bestätigter Komponistenname führt nur zu einem Werk ohne
+// composer_id (composer_id ist ohnehin nullable), keine Sonderbehandlung
+// nötig.
 //
 // Aufruf: POST { limit?: number } — verarbeitet bis zu `limit` (Default 20)
 // scheduled Events, die noch keine event_works/event_participants-Zeile
@@ -126,14 +134,6 @@ async function extractReferences(
   return { works, participants };
 }
 
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFD").replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 Deno.serve(async (req) => {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) {
@@ -182,8 +182,8 @@ Deno.serve(async (req) => {
   }
 
   let worksCreated = 0;
-  let personsCreated = 0;
-  let ensemblesCreated = 0;
+  let personsFlagged = 0;
+  let ensemblesFlagged = 0;
   let linksCreated = 0;
   const errors: string[] = [];
 
@@ -195,13 +195,40 @@ Deno.serve(async (req) => {
     }
 
     // Cache innerhalb dieses Laufs, um nicht pro Event erneut nachzuschlagen,
-    // wenn derselbe Name (z. B. ein Hausorchester) mehrfach vorkommt.
-    const personCache = new Map<string, string>();
-    const ensembleCache = new Map<string, string>();
+    // wenn derselbe Name (z. B. ein Hausorchester) mehrfach vorkommt. `null`
+    // heißt "unbekannt, bereits als entity_candidate geflaggt" — auch das
+    // wird gecacht, um nicht zweimal denselben Kandidaten anzulegen.
+    const personCache = new Map<string, string | null>();
+    const ensembleCache = new Map<string, string | null>();
 
-    async function getOrCreatePerson(name: string): Promise<string> {
+    // Unbekannte Namen werden NICHT mehr direkt in persons/ensembles
+    // angelegt (das hat vorher ohne jede Prüfung neue Stammdaten erzeugt) —
+    // stattdessen landen sie als entity_candidates zur redaktionellen
+    // Freigabe (siehe 20260818000004_entity_candidates.sql), konsistent mit
+    // der Discovery-Pipeline für externe Acts. Rückgabe null heißt "noch
+    // keine ID verfügbar" — der Aufrufer verknüpft dann (noch) nichts.
+    async function flagEntityCandidate(entityType: "person" | "ensemble", name: string): Promise<void> {
+      const { data: existingCandidate } = await supabase
+        .from("entity_candidates")
+        .select("id")
+        .eq("entity_type", entityType)
+        .ilike("name", name)
+        .eq("status", "pending")
+        .maybeSingle();
+      if (existingCandidate) return;
+
+      const { error } = await supabase.from("entity_candidates").insert({
+        entity_type: entityType,
+        name,
+        discovery_context: { source: "enrich-event-references", event_id: event.id },
+        suggested_event_title: event.title,
+      });
+      if (error) console.error(`flagEntityCandidate "${name}": ${error.message}`);
+    }
+
+    async function getOrCreatePerson(name: string): Promise<string | null> {
       const key = name.toLowerCase();
-      if (personCache.has(key)) return personCache.get(key)!;
+      if (personCache.has(key)) return personCache.get(key) ?? null;
       const { data: existing } = await supabase
         .from("persons")
         .select("id")
@@ -211,20 +238,15 @@ Deno.serve(async (req) => {
         personCache.set(key, existing.id);
         return existing.id;
       }
-      const { data: created, error } = await supabase
-        .from("persons")
-        .insert({ full_name: name, slug: slugify(name) })
-        .select("id")
-        .single();
-      if (error) throw new Error(`persons insert "${name}": ${error.message}`);
-      personsCreated++;
-      personCache.set(key, created.id);
-      return created.id;
+      await flagEntityCandidate("person", name);
+      personsFlagged++;
+      personCache.set(key, null);
+      return null;
     }
 
-    async function getOrCreateEnsemble(name: string, type: string | null): Promise<string> {
+    async function getOrCreateEnsemble(name: string, _type: string | null): Promise<string | null> {
       const key = name.toLowerCase();
-      if (ensembleCache.has(key)) return ensembleCache.get(key)!;
+      if (ensembleCache.has(key)) return ensembleCache.get(key) ?? null;
       const { data: existing } = await supabase
         .from("ensembles")
         .select("id")
@@ -234,15 +256,10 @@ Deno.serve(async (req) => {
         ensembleCache.set(key, existing.id);
         return existing.id;
       }
-      const { data: created, error } = await supabase
-        .from("ensembles")
-        .insert({ name, slug: slugify(name), type: type ?? "sonstiges" })
-        .select("id")
-        .single();
-      if (error) throw new Error(`ensembles insert "${name}": ${error.message}`);
-      ensemblesCreated++;
-      ensembleCache.set(key, created.id);
-      return created.id;
+      await flagEntityCandidate("ensemble", name);
+      ensemblesFlagged++;
+      ensembleCache.set(key, null);
+      return null;
     }
 
     try {
@@ -293,6 +310,11 @@ Deno.serve(async (req) => {
           ? await getOrCreateEnsemble(p.name.trim(), p.ensembleType ?? null)
           : await getOrCreatePerson(p.name.trim());
 
+        // Unbekannter Act — als entity_candidate geflaggt, aber noch keine
+        // ID vorhanden. Verknüpfung unterbleibt bis zur Freigabe (siehe
+        // getOrCreatePerson/getOrCreateEnsemble oben); kein Fehler.
+        if (entityId === null) continue;
+
         const { error: linkError } = await supabase
           .from("event_participants")
           .insert({
@@ -314,8 +336,8 @@ Deno.serve(async (req) => {
     JSON.stringify({
       processed: candidates.length,
       worksCreated,
-      personsCreated,
-      ensemblesCreated,
+      personsFlagged,
+      ensemblesFlagged,
       linksCreated,
       errorCount: errors.length,
       errors: errors.slice(0, 10),

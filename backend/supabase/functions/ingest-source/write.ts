@@ -10,6 +10,9 @@ import type { RawEvent } from "./types.ts";
 interface SourceRow {
   id: string;
   venue_id: string | null;
+  organizer_id?: string | null;
+  person_id?: string | null;
+  ensemble_id?: string | null;
 }
 
 // eventId is present on every non-error outcome — index.ts uses it to track
@@ -82,16 +85,19 @@ export async function upsertRawEvent(
         if (existing.content_hash === contentHash) {
           const { error: touchError } = await supabase
             .from("events")
-            .update({ last_verified_at: nowIso })
+            .update({ last_verified_at: nowIso, last_seen_at: nowIso })
             .eq("id", existing.id);
           if (touchError) {
             return { outcome: "error", error: `failed to refresh last_verified_at: ${touchError.message}` };
           }
+          await linkSourceEntity(supabase, source, existing.id);
           return { outcome: "unchanged", eventId: existing.id };
         }
         // Same source re-reporting the same external_id — authoritative,
         // always trust its image.
-        return await applyUpdate(supabase, existing, raw, contentHash, nowIso, source.id, true);
+        const outcome = await applyUpdate(supabase, existing, raw, contentHash, nowIso, source.id, true);
+        if (outcome.outcome !== "error") await linkSourceEntity(supabase, source, outcome.eventId);
+        return outcome;
       }
       // No row for this (source_id, external_id) yet — first time this
       // source has reported it. Still worth a fuzzy check: it may already
@@ -99,7 +105,7 @@ export async function upsertRawEvent(
       // at all) before we fall back to creating a brand-new event.
     }
 
-    const match = await findEventMatch(supabase, raw.title, venueId, raw.startDateTime);
+    const match = await findEventMatch(supabase, raw.title, venueId, raw.startDateTime, raw.castNames);
 
     if (match && match.similarity >= 0.7) {
       const { data: existing, error } = await supabase
@@ -135,6 +141,7 @@ export async function upsertRawEvent(
           .update({ source_id: source.id, external_id: raw.externalId })
           .eq("id", existing.id)
           .is("source_id", null);
+        await linkSourceEntity(supabase, source, existing.id);
       }
       return outcome;
     }
@@ -159,6 +166,7 @@ export async function upsertRawEvent(
         external_id: raw.externalId,
         content_hash: contentHash,
         last_verified_at: nowIso,
+        last_seen_at: nowIso,
         attribution_notice: raw.attributionNotice ?? null,
         attribution_license_url: raw.attributionLicenseUrl ?? null,
       })
@@ -168,6 +176,8 @@ export async function upsertRawEvent(
     if (createError || !created) {
       return { outcome: "error", error: `failed to create event: ${createError?.message ?? "unknown"}` };
     }
+
+    await linkSourceEntity(supabase, source, created.id);
 
     if (match) {
       const { error: dupError } = await supabase.from("duplicate_candidates").insert({
@@ -221,7 +231,7 @@ async function applyUpdate(
 
   const { error: updateError } = await supabase
     .from("events")
-    .update({ ...updates, content_hash: contentHash, last_verified_at: nowIso })
+    .update({ ...updates, content_hash: contentHash, last_verified_at: nowIso, last_seen_at: nowIso })
     .eq("id", existing.id);
 
   if (updateError) {
@@ -245,6 +255,56 @@ async function applyUpdate(
   }
 
   return { outcome: "updated", eventId: existing.id };
+}
+
+/** Verknüpft ein Event automatisch mit event_participants, wenn die Quelle
+ * explizit an eine Person/ein Ensemble gebunden ist (sources.person_id/
+ * ensemble_id, siehe 20260818000001_sources_person_ensemble.sql) — die
+ * Quelle IST "die eigene Seite von X", ein vertrauenswürdigeres Signal als
+ * eine LLM-Vermutung, deshalb hier direkt geschrieben statt über
+ * entity_candidates/enrich-event-references zu laufen. Idempotent: prüft
+ * vor dem Insert, ob die Verknüpfung schon existiert. Best-effort — ein
+ * Fehlschlag hier lässt den eigentlichen Event-Write nicht scheitern,
+ * genau wie beim event_change_log-Insert oben. */
+async function linkSourceEntity(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  source: SourceRow,
+  eventId: string,
+): Promise<void> {
+  if (!source.person_id && !source.ensemble_id) return;
+
+  const filterColumn = source.person_id ? "person_id" : "ensemble_id";
+  const filterValue = source.person_id ?? source.ensemble_id;
+
+  const { data: existingLink } = await supabase
+    .from("event_participants")
+    .select("id")
+    .eq("event_id", eventId)
+    .eq(filterColumn, filterValue)
+    .maybeSingle();
+  if (existingLink) return;
+
+  let role: string | null = null;
+  if (source.person_id) {
+    const { data: person } = await supabase
+      .from("persons")
+      .select("roles")
+      .eq("id", source.person_id)
+      .maybeSingle();
+    const roles: string[] = person?.roles ?? [];
+    role = roles[0] ?? "solist";
+  }
+
+  const { error } = await supabase.from("event_participants").insert({
+    event_id: eventId,
+    person_id: source.person_id ?? null,
+    ensemble_id: source.ensemble_id ?? null,
+    role,
+  });
+  if (error) {
+    console.error(`linkSourceEntity: failed to link event ${eventId} to source entity: ${error.message}`);
+  }
 }
 
 /** Only includes keys the source actually provided a non-null value for —
