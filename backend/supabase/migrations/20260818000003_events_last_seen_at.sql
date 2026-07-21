@@ -1,0 +1,11 @@
+-- Ergänzt events.last_verified_at um last_seen_at — bewusst zwei getrennte
+-- Felder statt einem: last_verified_at bedeutet weiterhin "eine
+-- STRUKTURIERTE Quelle hat diesen exakten Datensatz bestätigt/aktualisiert"
+-- und steuert flagMissingEvents() (Absage-Erkennung, siehe
+-- 20260815000003_cancellation_candidates.sql) — bleibt unverändert.
+-- last_seen_at bedeutet schwächer "irgendeine Quelle (strukturiert ODER
+-- LLM-basiert, siehe Ingestion-Pipeline-Erweiterung) hat dieses Event
+-- zuletzt bestätigt gesehen" und wird künftig auch vom LLM-Extraktionspfad
+-- gesetzt, OHNE last_verified_at anzufassen — eine gecachte oder
+-- halluzinierte LLM-Lesung soll nie eine echte Absage maskieren können.
+alter table events add column last_seen_at timestamptz;

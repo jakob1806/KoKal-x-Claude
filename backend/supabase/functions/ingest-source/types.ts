@@ -31,6 +31,13 @@ export interface RawEvent {
    * erweitert wurde, den nur eine einzelne Quelle betrifft. */
   attributionNotice?: string | null;
   attributionLicenseUrl?: string | null;
+  /** Mitwirkende/Besetzung als Freitext-Namen, falls die Quelle/der Parser
+   * das hergibt — zusätzliches Match-Signal für find_matching_event()
+   * (siehe matching.ts), wirkt nur, sobald das kandidierende Event bereits
+   * event_participants hat (z.B. durch enrich-event-references). Optional
+   * wie attributionNotice, aus demselben Grund: kein bestehender Connector
+   * muss das nachziehen, nur weil das Interface erweitert wurde. */
+  castNames?: string[] | null;
 }
 
 export interface ParseResult {

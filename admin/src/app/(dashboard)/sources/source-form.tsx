@@ -25,6 +25,8 @@ export interface SourceFormValues {
   url: string;
   venue_id: string | null;
   organizer_id: string | null;
+  person_id: string | null;
+  ensemble_id: string | null;
   crawl_frequency_minutes: number;
   legal_basis: string | null;
   status: string;
@@ -35,11 +37,15 @@ export function SourceForm({
   initial,
   venues,
   organizers,
+  persons,
+  ensembles,
 }: {
   action: (formData: FormData) => void;
   initial?: SourceFormValues;
   venues: { id: string; name: string }[];
   organizers: { id: string; name: string }[];
+  persons: { id: string; full_name: string }[];
+  ensembles: { id: string; name: string }[];
 }) {
   return (
     <form action={action} className="flex max-w-xl flex-col gap-4">
@@ -89,6 +95,29 @@ export function SourceForm({
             {organizers.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Zugehörige Person">
+          <Select name="person_id" defaultValue={initial?.person_id ?? ""}>
+            <option value="">—</option>
+            {persons.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.full_name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Zugehöriges Ensemble">
+          <Select name="ensemble_id" defaultValue={initial?.ensemble_id ?? ""}>
+            <option value="">—</option>
+            {ensembles.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
               </option>
             ))}
           </Select>

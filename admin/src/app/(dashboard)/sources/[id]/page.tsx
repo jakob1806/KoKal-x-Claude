@@ -22,6 +22,7 @@ const RUN_STATUS_STYLE: Record<string, string> = {
   success: "bg-emerald-50 text-emerald-700",
   partial: "bg-amber-50 text-amber-700",
   failed: "bg-red-50 text-red-700",
+  skipped_unchanged: "bg-blue-50 text-blue-700",
 };
 
 function truncate(text: string, max = 140) {
@@ -36,22 +37,27 @@ export default async function EditSourcePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data, error }, { data: venues }, { data: organizers }, { data: runs }] = await Promise.all([
-    supabase
-      .from("sources")
-      .select("name, type, url, venue_id, organizer_id, crawl_frequency_minutes, legal_basis, status")
-      .eq("id", id)
-      .maybeSingle<SourceFormValues>(),
-    supabase.from("venues").select("id, name").order("name"),
-    supabase.from("organizers").select("id, name").order("name"),
-    supabase
-      .from("ingestion_runs")
-      .select("id, started_at, finished_at, status, events_found, events_created, events_updated, events_flagged_for_review, errors")
-      .eq("source_id", id)
-      .order("started_at", { ascending: false })
-      .limit(10)
-      .returns<IngestionRunRow[]>(),
-  ]);
+  const [{ data, error }, { data: venues }, { data: organizers }, { data: persons }, { data: ensembles }, { data: runs }] =
+    await Promise.all([
+      supabase
+        .from("sources")
+        .select(
+          "name, type, url, venue_id, organizer_id, person_id, ensemble_id, crawl_frequency_minutes, legal_basis, status",
+        )
+        .eq("id", id)
+        .maybeSingle<SourceFormValues>(),
+      supabase.from("venues").select("id, name").order("name"),
+      supabase.from("organizers").select("id, name").order("name"),
+      supabase.from("persons").select("id, full_name").order("full_name"),
+      supabase.from("ensembles").select("id, name").order("name"),
+      supabase
+        .from("ingestion_runs")
+        .select("id, started_at, finished_at, status, events_found, events_created, events_updated, events_flagged_for_review, errors")
+        .eq("source_id", id)
+        .order("started_at", { ascending: false })
+        .limit(10)
+        .returns<IngestionRunRow[]>(),
+    ]);
 
   if (error || !data) notFound();
 
@@ -67,7 +73,14 @@ export default async function EditSourcePage({
         </div>
       </div>
       <div className="mt-6">
-        <SourceForm action={updateSource.bind(null, id)} initial={data} venues={venues ?? []} organizers={organizers ?? []} />
+        <SourceForm
+          action={updateSource.bind(null, id)}
+          initial={data}
+          venues={venues ?? []}
+          organizers={organizers ?? []}
+          persons={persons ?? []}
+          ensembles={ensembles ?? []}
+        />
       </div>
 
       <div className="mt-10">
