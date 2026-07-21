@@ -19,6 +19,7 @@ interface CandidateRow {
   source_url: string | null;
   created_at: string;
   venue: { name: string } | null;
+  discovery_context: { tavily?: { bioSnippet: string | null; websiteUrl: string | null } } | null;
 }
 
 function formatDate(iso: string) {
@@ -31,7 +32,7 @@ export default async function EntityCandidatesPage() {
     .from("entity_candidates")
     .select(
       `id, entity_type, name, suggested_event_title, suggested_event_start_datetime, source_url, created_at,
-       venue:venues(name)`,
+       discovery_context, venue:venues(name)`,
     )
     .eq("status", "pending")
     .order("created_at", { ascending: false })
@@ -76,6 +77,21 @@ export default async function EntityCandidatesPage() {
                       className="mt-1 block truncate text-xs text-blue-600 hover:underline"
                     >
                       {candidate.source_url}
+                    </a>
+                  )}
+                  {candidate.discovery_context?.tavily?.bioSnippet && (
+                    <p className="mt-2 text-xs text-neutral-600">
+                      {candidate.discovery_context.tavily.bioSnippet}
+                    </p>
+                  )}
+                  {candidate.discovery_context?.tavily?.websiteUrl && (
+                    <a
+                      href={candidate.discovery_context.tavily.websiteUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 block truncate text-xs text-blue-600 hover:underline"
+                    >
+                      {candidate.discovery_context.tavily.websiteUrl}
                     </a>
                   )}
                 </div>
