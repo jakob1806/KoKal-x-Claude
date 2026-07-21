@@ -8,8 +8,8 @@
 //  1. Schema.org (JSON-LD) — kostenlos, zuverlässig, deckt die meisten
 //     größeren Ticketing-/Venue-Seiten ab (viele pflegen strukturierte
 //     Daten fürs SEO).
-//  2. KI-Fallback (Anthropic API) nur wenn (1) nichts findet — braucht
-//     ANTHROPIC_API_KEY als Supabase-Secret, siehe llm.ts.
+//  2. KI-Fallback (Gemini API) nur wenn (1) nichts findet — braucht
+//     GEMINI_API_KEY als Supabase-Secret, siehe llm.ts / _shared/gemini.ts.
 //
 // Alle so angelegten Events teilen sich eine feste "manual"-Quelle (siehe
 // ensureManualSource) statt für jede eingegebene URL eine eigene
