@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { logSystemAction } from "@/lib/system-log";
 
 // Slugify hier dupliziert statt aus den Deno-Functions importiert — die
 // Admin-App (Next.js) und die Edge Functions (Deno) teilen keinen
@@ -31,6 +32,14 @@ export async function rejectEntityCandidate(candidateId: string) {
     .update({ status: "rejected", reviewed_at: new Date().toISOString() })
     .eq("id", candidateId);
   if (error) throw new Error(error.message);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "entity_candidate",
+    entityId: candidateId,
+    action: "rejected",
+    actor: user?.email ?? user?.id ?? "unknown",
+  });
 
   revalidatePath("/entity-candidates");
 }
@@ -92,6 +101,15 @@ export async function approveEntityCandidate(candidateId: string) {
     .eq("id", candidateId);
   if (updateError) throw new Error(updateError.message);
 
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "entity_candidate",
+    entityId: candidateId,
+    action: "approved_created",
+    actor: user?.email ?? user?.id ?? "unknown",
+    after: { [createdIdColumn]: newId, name: candidate.name },
+  });
+
   revalidatePath("/entity-candidates");
 }
 
@@ -121,6 +139,15 @@ export async function mergeEntityCandidate(candidateId: string, matchedEntityId:
     .update({ status: "approved", reviewed_at: new Date().toISOString(), [createdIdColumn]: matchedEntityId })
     .eq("id", candidateId);
   if (updateError) throw new Error(updateError.message);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "entity_candidate",
+    entityId: candidateId,
+    action: "merged",
+    actor: user?.email ?? user?.id ?? "unknown",
+    after: { [createdIdColumn]: matchedEntityId },
+  });
 
   revalidatePath("/entity-candidates");
 }
