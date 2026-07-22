@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/persons", label: "Personen" },
   { href: "/ensembles", label: "Ensembles" },
   { href: "/media", label: "Bilder" },
+  { href: "/regions", label: "Regionen" },
   { href: "/users", label: "Benutzer" },
   { href: "/reports", label: "Fehlerberichte" },
 ];
