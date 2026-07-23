@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/ensembles", label: "Ensembles" },
   { href: "/festivals", label: "Festivals" },
   { href: "/media", label: "Bilder" },
+  { href: "/tags", label: "Tags" },
   { href: "/regions", label: "Regionen" },
   { href: "/users", label: "Benutzer" },
   { href: "/reports", label: "Fehlerberichte" },
