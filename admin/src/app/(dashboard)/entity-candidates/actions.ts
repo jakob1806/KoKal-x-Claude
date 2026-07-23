@@ -4,6 +4,64 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { logSystemAction } from "@/lib/system-log";
 
+export interface ResolveWithAiResult {
+  status: "ok" | "failed";
+  processed?: number;
+  approved?: number;
+  leftPending?: number;
+  errors?: string[];
+  error?: string;
+}
+
+// Ruft die resolve-entity-candidates Edge Function auf: Batch-Nachlauf für
+// bereits wartende Kandidaten, die nie durch die automatische Entscheidung
+// in enrich-event-references liefen (die gilt nur für neu erkannte Namen ab
+// ihrer Einführung — Nutzer-Feedback: "ich muss immer noch alles selbst
+// freigeben", weil die bestehende Warteliste davon unberührt blieb).
+export async function resolveEntityCandidatesWithAi(): Promise<ResolveWithAiResult> {
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/functions/v1/resolve-entity-candidates`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: anonKey ?? "",
+        Authorization: `Bearer ${anonKey ?? ""}`,
+      },
+      body: JSON.stringify({}),
+    });
+  } catch (err) {
+    return {
+      status: "failed",
+      error: `resolve-entity-candidates nicht erreichbar: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await res.json();
+  } catch {
+    return { status: "failed", error: `Unerwartete Antwort (HTTP ${res.status}).` };
+  }
+
+  if (!res.ok || body.error) {
+    return { status: "failed", error: (body.error as string) ?? `HTTP ${res.status}` };
+  }
+
+  revalidatePath("/entity-candidates");
+
+  return {
+    status: "ok",
+    processed: body.processed as number | undefined,
+    approved: body.approved as number | undefined,
+    leftPending: body.left_pending as number | undefined,
+    errors: body.errors as string[] | undefined,
+  };
+}
+
 // Slugify hier dupliziert statt aus den Deno-Functions importiert — die
 // Admin-App (Next.js) und die Edge Functions (Deno) teilen keinen
 // Modul-Raum, dieselbe kleine Funktion existiert auch in
