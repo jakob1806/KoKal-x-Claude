@@ -1,0 +1,72 @@
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+interface FestivalRow {
+  id: string;
+  name: string;
+  recurring: boolean;
+  organizer: { name: string } | null;
+}
+
+export default async function FestivalsPage() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("festivals")
+    .select("id, name, recurring, organizer:organizers(name)")
+    .order("name")
+    .returns<FestivalRow[]>();
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Festivals</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">
+            Wiederkehrende und einmalige Festivals, die Events gruppieren (z. B. Münchner Opernfestspiele).
+          </p>
+        </div>
+        <Link
+          href="/festivals/new"
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+        >
+          Neu anlegen
+        </Link>
+      </div>
+
+      {error && <p className="mt-6 text-sm text-amber-700">Konnte Festivals nicht laden: {error.message}</p>}
+
+      {!error && (
+        <div className="mt-6 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Veranstalter</th>
+                <th className="px-4 py-3 font-medium">Wiederkehrend</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {data?.length ? (
+                data.map((f) => (
+                  <tr key={f.id} className="hover:bg-neutral-50">
+                    <td className="px-4 py-3 font-medium text-neutral-900">{f.name}</td>
+                    <td className="px-4 py-3 text-neutral-600">{f.organizer?.name ?? "—"}</td>
+                    <td className="px-4 py-3 text-neutral-600">{f.recurring ? "Ja" : "Nein"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={3} className="px-4 py-10 text-center text-neutral-400">
+                    Keine Festivals angelegt.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/venues", label: "Venues" },
   { href: "/persons", label: "Personen" },
   { href: "/ensembles", label: "Ensembles" },
+  { href: "/festivals", label: "Festivals" },
   { href: "/media", label: "Bilder" },
   { href: "/regions", label: "Regionen" },
   { href: "/users", label: "Benutzer" },
