@@ -33,14 +33,33 @@ Deno.serve(async (_req) => {
 
   const { data: sources, error } = await supabase
     .from("sources")
-    .select("id")
+    .select("id, last_run_at, crawl_frequency_minutes")
     .eq("status", "active");
 
   if (error) {
     return jsonResponse({ error: `failed to load active sources: ${error.message}` }, 500);
   }
 
-  const ids = (sources ?? []).map((s: { id: string }) => s.id);
+  // Architektur-Dokument Abschnitt 5.1: adaptives Crawl-Intervall. Bisher
+  // wurde crawl_frequency_minutes von adjustCrawlFrequency() (siehe
+  // ingest-source/index.ts) schon live kalibriert, aber NICHTS hier las den
+  // Wert je — dieser tägliche Cron-Lauf holte trotzdem jede aktive Quelle,
+  // egal ob sie sich seit Wochen nicht geändert hat oder stündlich
+  // aktualisiert wird. Jetzt: eine Quelle ist "fällig", wenn last_run_at
+  // fehlt (noch nie gelaufen) oder länger als crawl_frequency_minutes
+  // zurückliegt (Default 1440 = täglich, deckt sich mit dem bisherigen
+  // Cron-Rhythmus, wenn keine Kalibrierung vorliegt).
+  const now = Date.now();
+  const dueSources = (sources ?? []).filter(
+    (s: { last_run_at: string | null; crawl_frequency_minutes: number | null }) => {
+      if (!s.last_run_at) return true;
+      const frequencyMs = (s.crawl_frequency_minutes ?? 1440) * 60_000;
+      return now - new Date(s.last_run_at).getTime() >= frequencyMs;
+    },
+  );
+  const skippedNotDue = (sources ?? []).length - dueSources.length;
+
+  const ids = dueSources.map((s: { id: string }) => s.id);
   const results: RunSummary[] = [];
 
   let nextIndex = 0;
@@ -73,7 +92,9 @@ Deno.serve(async (_req) => {
   const failed = results.filter((r) => r.status === "failed").length;
 
   return jsonResponse({
-    total: ids.length,
+    total_active: (sources ?? []).length,
+    due: ids.length,
+    skipped_not_due: skippedNotDue,
     succeeded,
     skipped,
     failed,
