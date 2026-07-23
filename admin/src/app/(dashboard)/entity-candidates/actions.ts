@@ -22,6 +22,11 @@ export async function resolveEntityCandidatesWithAi(): Promise<ResolveWithAiResu
   const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  // Explizites Timeout knapp über dem 150s-Idle-Timeout der Edge Function
+  // selbst — ohne das blieb der Button bei einem serverseitigen Timeout
+  // ohne jede Rückmeldung auf "KI prüft…" hängen, statt einen Fehler zu
+  // zeigen (siehe resolve-entity-candidates/index.ts für den eigentlichen
+  // Fix: kleineres Default-Limit + Nebenläufigkeit).
   let res: Response;
   try {
     res = await fetch(`${baseUrl}/functions/v1/resolve-entity-candidates`, {
@@ -32,11 +37,15 @@ export async function resolveEntityCandidatesWithAi(): Promise<ResolveWithAiResu
         Authorization: `Bearer ${anonKey ?? ""}`,
       },
       body: JSON.stringify({}),
+      signal: AbortSignal.timeout(155_000),
     });
   } catch (err) {
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
     return {
       status: "failed",
-      error: `resolve-entity-candidates nicht erreichbar: ${err instanceof Error ? err.message : String(err)}`,
+      error: timedOut
+        ? "Zeitüberschreitung — bitte erneut versuchen (Batch ist bewusst klein gehalten, sollte normalerweise schnell durchlaufen)."
+        : `resolve-entity-candidates nicht erreichbar: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
