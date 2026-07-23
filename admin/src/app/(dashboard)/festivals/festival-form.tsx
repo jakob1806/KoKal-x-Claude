@@ -1,6 +1,7 @@
 "use client";
 
 import { Field, Select, TextArea, TextInput } from "@/components/form-fields";
+import { ImageUploadField } from "@/components/image-upload-field";
 import { SubmitButton } from "@/components/submit-button";
 
 export interface FestivalFormValues {
@@ -10,6 +11,7 @@ export interface FestivalFormValues {
   organizer_id: string | null;
   recurring: boolean;
   website_url: string | null;
+  photo_url: string | null;
 }
 
 export function FestivalForm({
@@ -55,8 +57,10 @@ export function FestivalForm({
         Jährlich wiederkehrend
       </label>
 
+      <ImageUploadField name="photo_url" initialUrl={initial?.photo_url} entityType="festivals" shape="rounded" label="Foto" />
+
       <div className="mt-2">
-        <SubmitButton>Festival anlegen</SubmitButton>
+        <SubmitButton>{initial ? "Speichern" : "Festival anlegen"}</SubmitButton>
       </div>
     </form>
   );

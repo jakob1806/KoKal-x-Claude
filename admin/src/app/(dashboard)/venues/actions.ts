@@ -16,6 +16,7 @@ function readVenueFields(formData: FormData) {
     lng: Number(formData.get("lng")),
     capacity: formData.get("capacity") ? Number(formData.get("capacity")) : null,
     website_url: String(formData.get("website_url") ?? "").trim() || null,
+    photo_url: String(formData.get("photo_url") ?? "").trim() || null,
   };
 }
 
@@ -34,6 +35,7 @@ export async function createVenue(formData: FormData) {
     p_lng: f.lng,
     p_capacity: f.capacity,
     p_website_url: f.website_url,
+    p_photo_url: f.photo_url,
   });
 
   if (error) throw new Error(error.message);
@@ -58,6 +60,7 @@ export async function updateVenue(venueId: string, formData: FormData) {
     p_lng: f.lng,
     p_capacity: f.capacity,
     p_website_url: f.website_url,
+    p_photo_url: f.photo_url,
   });
 
   if (error) throw new Error(error.message);

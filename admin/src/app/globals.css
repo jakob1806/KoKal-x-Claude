@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
+/* Dieses Dashboard ist bewusst nur hell gestaltet (bg-white/text-neutral-900
+   fest in jeder Seite) — eine prefers-color-scheme:dark-Umschaltung der
+   Root-Variablen (vorher hier vorhanden) macht Text auf Elementen OHNE
+   explizite Tailwind-Farbklasse (z.B. <input> ohne eigene text-Klasse)
+   unlesbar hell auf weiß, sobald das Betriebssystem im Dark Mode läuft —
+   das war die Ursache für "URL-Text zu hell" auf /sources/onboard und für
+   generelle Kontrastprobleme. color-scheme: light verhindert zusätzlich,
+   dass native Formularelemente (Selects, Datepicker) trotzdem dunkel
+   gerendert werden. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -10,13 +20,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {

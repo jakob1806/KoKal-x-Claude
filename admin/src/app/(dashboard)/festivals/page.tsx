@@ -51,7 +51,11 @@ export default async function FestivalsPage() {
               {data?.length ? (
                 data.map((f) => (
                   <tr key={f.id} className="hover:bg-neutral-50">
-                    <td className="px-4 py-3 font-medium text-neutral-900">{f.name}</td>
+                    <td className="px-4 py-3 font-medium text-neutral-900">
+                      <Link href={`/festivals/${f.id}`} className="hover:underline">
+                        {f.name}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-neutral-600">{f.organizer?.name ?? "—"}</td>
                     <td className="px-4 py-3 text-neutral-600">{f.recurring ? "Ja" : "Nein"}</td>
                   </tr>

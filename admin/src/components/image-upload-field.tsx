@@ -1,0 +1,122 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+
+const BUCKET = "entity-photos";
+const MAX_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Datei-Upload für Venue-/Ensemble-/Festival-/Personen-Fotos, direkt aus
+ * dem Admin-Formular heraus (statt bisher nur eine externe URL einzutragen).
+ * Lädt clientseitig in den "entity-photos"-Storage-Bucket hoch (public=true,
+ * Schreibzugriff über storage.objects-RLS auf is_admin_or_editor()
+ * beschränkt, siehe 20260825000001_entity_photo_uploads.sql) und schreibt
+ * die resultierende öffentliche URL in ein verstecktes Formularfeld — die
+ * Server Actions der jeweiligen Entität kennen weiterhin nur eine
+ * photo_url-Zeichenkette, unabhängig davon, ob sie hochgeladen oder
+ * manuell eingetragen wurde.
+ *
+ * shape="circle" für Personen (rundes Profilfoto), "rounded" für
+ * Venues/Ensembles/Festivals (rechteckiges Vorschaubild). */
+export function ImageUploadField({
+  name,
+  initialUrl,
+  entityType,
+  shape = "rounded",
+  label = "Foto",
+}: {
+  name: string;
+  initialUrl?: string | null;
+  entityType: string;
+  shape?: "circle" | "rounded";
+  label?: string;
+}) {
+  const [url, setUrl] = useState(initialUrl ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setError("Nur JPEG, PNG oder WebP erlaubt.");
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      setError("Datei zu groß (max. 5 MB).");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const supabase = createClient();
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `${entityType}/${crypto.randomUUID()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      setUrl(data.publicUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload fehlgeschlagen.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  const previewClass =
+    shape === "circle"
+      ? "h-20 w-20 rounded-full object-cover"
+      : "h-20 w-32 rounded-md object-cover";
+  const placeholderClass =
+    shape === "circle"
+      ? "h-20 w-20 rounded-full"
+      : "h-20 w-32 rounded-md";
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-neutral-600">{label}</span>
+      <div className="flex items-center gap-3">
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="" className={`${previewClass} border border-neutral-200 bg-neutral-50`} />
+        ) : (
+          <div className={`${placeholderClass} flex items-center justify-center border border-dashed border-neutral-300 bg-neutral-50 text-xs text-neutral-400`}>
+            Kein Foto
+          </div>
+        )}
+        <div className="flex flex-col gap-1">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_TYPES.join(",")}
+            disabled={uploading}
+            onChange={handleFileChange}
+            className="text-xs text-neutral-600 file:mr-2 file:rounded-md file:border file:border-neutral-300 file:bg-white file:px-2 file:py-1 file:text-xs file:font-medium file:text-neutral-700 hover:file:bg-neutral-50 disabled:opacity-50"
+          />
+          {uploading && <span className="text-xs text-neutral-500">Lädt hoch…</span>}
+          {error && <span className="text-xs text-red-600">{error}</span>}
+          {url && !uploading && (
+            <button
+              type="button"
+              onClick={() => setUrl("")}
+              className="self-start text-xs text-neutral-500 hover:text-red-600"
+            >
+              Foto entfernen
+            </button>
+          )}
+        </div>
+      </div>
+      <input type="hidden" name={name} value={url} />
+    </div>
+  );
+}
