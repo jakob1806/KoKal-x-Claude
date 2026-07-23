@@ -46,12 +46,20 @@ export default async function SourcesPage() {
             hier lassen sich Quellen bereits jetzt dokumentieren und pflegen.
           </p>
         </div>
-        <Link
-          href="/sources/new"
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
-        >
-          Neu anlegen
-        </Link>
+        <div className="flex gap-3">
+          <Link
+            href="/sources/onboard"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+          >
+            Neue Quelle testen
+          </Link>
+          <Link
+            href="/sources/new"
+            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            Neu anlegen
+          </Link>
+        </div>
       </div>
 
       {error && <p className="mt-6 text-sm text-amber-700">Konnte Quellen nicht laden: {error.message}</p>}
