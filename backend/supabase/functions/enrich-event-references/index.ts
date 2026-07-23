@@ -260,17 +260,25 @@ Deno.serve(async (req) => {
     const personCache = new Map<string, string | null>();
     const ensembleCache = new Map<string, string | null>();
 
-    // Unbekannte Namen werden NICHT mehr direkt in persons/ensembles
-    // angelegt (das hat vorher ohne jede Prüfung neue Stammdaten erzeugt) —
-    // stattdessen landen sie als entity_candidates zur redaktionellen
-    // Freigabe (siehe 20260818000004_entity_candidates.sql), konsistent mit
-    // der Discovery-Pipeline für externe Acts. Rückgabe null heißt "noch
-    // keine ID verfügbar" — der Aufrufer verknüpft dann (noch) nichts.
+    // Unbekannte Namen werden NICHT mehr ungeprüft in persons/ensembles
+    // angelegt (das hat früher ohne jede Prüfung neue Stammdaten erzeugt).
+    // ABER: wenn die Tavily+LLM-Anreicherung (enrichCandidateContext) mit
+    // confident=true eindeutig bestätigt, dass der Name zu einem/einer
+    // echten klassischen Musiker*in/Ensemble gehört, UND es keinen
+    // ambivalenten possibleMatch (Namensvetter-Risiko) gibt, legt die KI
+    // den Stammdaten-Eintrag selbst an, statt ihn liegen zu lassen — das
+    // war laut Nutzer-Feedback zu viel manueller Aufwand für eindeutige
+    // Fälle. Bleibt trotzdem konservativ: bei jeder Unklarheit (nicht
+    // confident, oder ein möglicher Namensvetter bereits bekannt) landet
+    // der Kandidat wie bisher als entity_candidates zur redaktionellen
+    // Freigabe (siehe 20260818000004_entity_candidates.sql). Rückgabe null
+    // heißt "noch keine ID verfügbar" — der Aufrufer verknüpft dann (noch)
+    // nichts.
     async function flagEntityCandidate(
       entityType: "person" | "ensemble",
       name: string,
       possibleMatch?: { id: string; name: string; similarity: number },
-    ): Promise<void> {
+    ): Promise<string | null> {
       const { data: existingCandidate } = await supabase
         .from("entity_candidates")
         .select("id")
@@ -278,9 +286,16 @@ Deno.serve(async (req) => {
         .ilike("name", name)
         .eq("status", "pending")
         .maybeSingle();
-      if (existingCandidate) return;
+      if (existingCandidate) return null;
 
       const enrichment = await enrichCandidateContext(entityType, name);
+
+      if (enrichment && !possibleMatch) {
+        const newId = await autoCreateEntity(entityType, name, enrichment);
+        if (newId) return newId;
+        // Anlegen fehlgeschlagen (z.B. Slug-Kollision, DB-Fehler) — als
+        // Fallback trotzdem als Kandidat parken statt den Namen zu verlieren.
+      }
 
       const { error } = await supabase.from("entity_candidates").insert({
         entity_type: entityType,
@@ -294,6 +309,64 @@ Deno.serve(async (req) => {
         suggested_event_title: event.title,
       });
       if (error) console.error(`flagEntityCandidate "${name}": ${error.message}`);
+      return null;
+    }
+
+    /** Legt persons/ensembles-Zeile direkt an (is_verified: false — wie bei
+     * einer manuellen Redaktions-Freigabe, siehe admin/entity-candidates/
+     * actions.ts approveEntityCandidate) und protokolliert das als
+     * KI-Entscheidung im Audit-Log. Gibt null zurück statt zu werfen, wenn
+     * irgendetwas schiefgeht — der Aufrufer fällt dann auf den normalen
+     * Review-Pfad zurück. */
+    async function autoCreateEntity(
+      entityType: "person" | "ensemble",
+      name: string,
+      enrichment: { bioSnippet: string | null; websiteUrl: string | null },
+    ): Promise<string | null> {
+      const slug = await generateUniqueSlug(entityType === "person" ? "persons" : "ensembles", name);
+      const table = entityType === "person" ? "persons" : "ensembles";
+      const payload =
+        entityType === "person"
+          ? { full_name: name, slug, is_verified: false, website_url: enrichment.websiteUrl }
+          : { name, slug, type: "sonstiges", is_verified: false, website_url: enrichment.websiteUrl };
+
+      const { data, error } = await supabase.from(table).insert(payload).select("id").single();
+      if (error || !data) {
+        console.error(`autoCreateEntity "${name}" (${entityType}): ${error?.message ?? "kein Ergebnis"}`);
+        return null;
+      }
+
+      await logSystemAction(supabase, entityType, data.id, "ai_auto_approved", {
+        name,
+        event_id: event.id,
+        bio_snippet: enrichment.bioSnippet,
+      }, "system (AI-Entscheidung)");
+
+      return data.id;
+    }
+
+    /** Slug-Generierung dupliziert aus ingest-source/write.ts (dort
+     * slugify()/generateUniqueSlug()) — kein gemeinsamer Modul-Raum
+     * zwischen den einzelnen Edge Functions, siehe dortigen Kommentar. */
+    async function generateUniqueSlug(table: "persons" | "ensembles", name: string): Promise<string> {
+      const umlauts: Record<string, string> = { ä: "ae", ö: "oe", ü: "ue", ß: "ss", Ä: "ae", Ö: "oe", Ü: "ue" };
+      let s = name;
+      for (const [from, to] of Object.entries(umlauts)) s = s.split(from).join(to);
+      const base = s
+        .toLowerCase()
+        .normalize("NFKD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 80)
+        .replace(/-+$/g, "") || "eintrag";
+
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
+        const { data } = await supabase.from(table).select("id").eq("slug", candidate).maybeSingle();
+        if (!data) return candidate;
+      }
+      return `${base}-${crypto.randomUUID().slice(0, 8)}`;
     }
 
     // Schwellwerte für Fuzzy-Matching (Architektur-Dokument Abschnitt 2.3):
@@ -332,13 +405,17 @@ Deno.serve(async (req) => {
         return bestMatch.id;
       }
 
-      await flagEntityCandidate(
+      const autoCreatedId = await flagEntityCandidate(
         "person",
         name,
         bestMatch && bestMatch.similarity >= FUZZY_FLAG_THRESHOLD
           ? { id: bestMatch.id, name: bestMatch.full_name, similarity: bestMatch.similarity }
           : undefined,
       );
+      if (autoCreatedId) {
+        personCache.set(key, autoCreatedId);
+        return autoCreatedId;
+      }
       personsFlagged++;
       personCache.set(key, null);
       return null;
@@ -370,13 +447,17 @@ Deno.serve(async (req) => {
         return bestMatch.id;
       }
 
-      await flagEntityCandidate(
+      const autoCreatedId = await flagEntityCandidate(
         "ensemble",
         name,
         bestMatch && bestMatch.similarity >= FUZZY_FLAG_THRESHOLD
           ? { id: bestMatch.id, name: bestMatch.name, similarity: bestMatch.similarity }
           : undefined,
       );
+      if (autoCreatedId) {
+        ensembleCache.set(key, autoCreatedId);
+        return autoCreatedId;
+      }
       ensemblesFlagged++;
       ensembleCache.set(key, null);
       return null;

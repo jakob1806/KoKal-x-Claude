@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Field, Select, TextArea, TextInput } from "@/components/form-fields";
+import { ImageUploadField } from "@/components/image-upload-field";
 import { SubmitButton } from "@/components/submit-button";
 
 function slugify(value: string) {
@@ -107,14 +108,11 @@ export function EnsembleForm({
         </Select>
       </Field>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Foto-URL">
-          <TextInput name="photo_url" type="url" defaultValue={initial?.photo_url ?? ""} />
-        </Field>
-        <Field label="Website">
-          <TextInput name="website_url" type="url" defaultValue={initial?.website_url ?? ""} />
-        </Field>
-      </div>
+      <ImageUploadField name="photo_url" initialUrl={initial?.photo_url} entityType="ensembles" shape="rounded" label="Foto" />
+
+      <Field label="Website">
+        <TextInput name="website_url" type="url" defaultValue={initial?.website_url ?? ""} />
+      </Field>
 
       <label className="flex items-center gap-2 text-sm text-neutral-700">
         <input type="checkbox" name="is_verified" defaultChecked={initial?.is_verified} />
