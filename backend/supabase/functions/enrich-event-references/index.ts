@@ -14,6 +14,13 @@
 // composer_id (composer_id ist ohnehin nullable), keine Sonderbehandlung
 // nötig.
 //
+// Verlinkt zusätzlich event_genres — im Gegensatz zu tags (freie
+// KI-Schlagworte) ist genres ein kontrolliertes Vokabular (genre_type-Enum,
+// 20260715000002_enums_and_lookup.sql): die KI wählt nur aus der festen
+// Liste, es wird nie eine neue genres-Zeile angelegt. War vorher nur über
+// das Admin-Eventformular manuell zuweisbar, keine Ingestion setzte je
+// event_genres automatisch.
+//
 // Beim Anlegen eines neuen Kandidaten wird zusätzlich per Tavily (siehe
 // _shared/tavily.ts) nach dem Namen gesucht und der Treffer per LLM zu
 // einer kurzen Einordnung (Bio-Snippet, Website) zusammengefasst — landet
@@ -37,6 +44,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAiFunction, hasAnyAiProviderConfigured, type AiFunctionDeclaration } from "../_shared/ai/router.ts";
 import { logSystemAction } from "../_shared/systemLog.ts";
 import { enrichCandidateContext } from "../_shared/entityEnrichment.ts";
+
+// Muss exakt dem genre_type-Enum entsprechen (20260715000002_enums_and_lookup.sql)
+// — eine feste, kuratierte Liste statt Freitext wie bei tags, damit
+// event_genres ein kontrolliertes Vokabular bleibt.
+const GENRE_SLUGS = [
+  "oper", "konzert", "chormusik", "kirchenmusik", "kammermusik",
+  "liederabend", "orchester", "orgel", "jazz", "neue_musik",
+  "familienkonzert", "kinder",
+];
 
 const ENRICH_FUNCTION: AiFunctionDeclaration = {
   name: "extract_references",
@@ -97,8 +113,22 @@ const ENRICH_FUNCTION: AiFunctionDeclaration = {
           "Leeres Array, wenn nichts Spezifisches erkennbar ist.",
         items: { type: "string" },
       },
+      genres: {
+        type: "array",
+        description:
+          "IMMER mindestens 1, maximal 2 Kategorien aus der FESTEN Liste (nicht erfinden, nur aus dieser Liste " +
+          "wählen): oper, konzert, chormusik, kirchenmusik, kammermusik, liederabend, orchester, orgel, jazz, " +
+          "neue_musik, familienkonzert, kinder. Wenn nichts Spezifischeres eindeutig erkennbar ist (z. B. kein " +
+          "Chor/Kirche/Kammermusik-Hinweis im Text), 'konzert' als generische Kategorie wählen — jedes " +
+          "klassische Konzert passt mindestens dort hinein. NUR ein leeres Array, wenn Titel/Beschreibung gar " +
+          "keine Veranstaltung beschreiben (z. B. reiner Terminhinweis ohne jeden inhaltlichen Bezug).",
+        items: {
+          type: "string",
+          enum: GENRE_SLUGS,
+        },
+      },
     },
-    required: ["works", "participants"],
+    required: ["works", "participants", "genres"],
   },
 };
 
@@ -111,7 +141,7 @@ interface EventRow {
 async function extractReferences(
   title: string,
   description: string | null,
-): Promise<{ works: Array<{ title: string; composerName: string | null }>; participants: Array<{ name: string; type: string; role: string | null; ensembleType: string | null; instrument: string | null }>; tags: string[] } | null> {
+): Promise<{ works: Array<{ title: string; composerName: string | null }>; participants: Array<{ name: string; type: string; role: string | null; ensembleType: string | null; instrument: string | null }>; tags: string[]; genres: string[] } | null> {
   const text = `Titel: ${title}${description ? `\nBeschreibung: ${description}` : ""}`;
 
   const response = await callAiFunction(
@@ -126,7 +156,10 @@ async function extractReferences(
   const works = Array.isArray(args.works) ? args.works : [];
   const participants = Array.isArray(args.participants) ? args.participants : [];
   const tags = Array.isArray(args.tags) ? args.tags.filter((t: unknown) => typeof t === "string" && t.trim()) : [];
-  return { works, participants, tags };
+  const genres = Array.isArray(args.genres)
+    ? args.genres.filter((g: unknown) => typeof g === "string" && GENRE_SLUGS.includes(g))
+    : [];
+  return { works, participants, tags, genres };
 }
 
 Deno.serve(async (req) => {
@@ -176,6 +209,7 @@ Deno.serve(async (req) => {
   let personsFlagged = 0;
   let ensemblesFlagged = 0;
   let linksCreated = 0;
+  let genresAssigned = 0;
   const errors: string[] = [];
 
   for (const event of candidates) {
@@ -503,6 +537,19 @@ Deno.serve(async (req) => {
           .upsert({ event_id: event.id, tag_id: tagId }, { onConflict: "event_id,tag_id" });
         if (eventTagError) console.error(`event_tags link "${trimmed}": ${eventTagError.message}`);
       }
+
+      // genres ist ein kontrolliertes Vokabular (siehe GENRE_SLUGS oben) —
+      // im Gegensatz zu tags gibt es nie einen "anlegen"-Zweig, nur
+      // Nachschlagen der bereits per Seed-Migration vorhandenen Zeile.
+      for (const slug of extracted.genres) {
+        const { data: genre } = await supabase.from("genres").select("id").eq("slug", slug).maybeSingle();
+        if (!genre) continue; // sollte nicht vorkommen (enum-validiert), sicherheitshalber trotzdem prüfen
+        const { error: eventGenreError } = await supabase
+          .from("event_genres")
+          .upsert({ event_id: event.id, genre_id: genre.id }, { onConflict: "event_id,genre_id" });
+        if (eventGenreError) console.error(`event_genres link "${slug}": ${eventGenreError.message}`);
+        else genresAssigned++;
+      }
     } catch (err) {
       errors.push(`"${event.title}": ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -515,6 +562,7 @@ Deno.serve(async (req) => {
       personsFlagged,
       ensemblesFlagged,
       linksCreated,
+      genresAssigned,
       errorCount: errors.length,
       errors: errors.slice(0, 10),
     }),
