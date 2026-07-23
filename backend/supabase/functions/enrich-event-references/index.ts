@@ -147,6 +147,15 @@ const ENRICH_FUNCTION: AiFunctionDeclaration = {
           required: ["name", "type"],
         },
       },
+      tags: {
+        type: "array",
+        description:
+          "1-5 kurze, wiederverwendbare Schlagworte auf Deutsch (z. B. 'Barock', 'Familienkonzert', 'Orgel', " +
+          "'A-cappella', 'Uraufführung'). KEINE Komponisten-/Werktitel-Wiederholungen aus works/participants, " +
+          "keine Venue-/Datumsangaben — nur Stichworte, die ein Nutzer als Filter/Suchbegriff nutzen würde. " +
+          "Leeres Array, wenn nichts Spezifisches erkennbar ist.",
+        items: { type: "string" },
+      },
     },
     required: ["works", "participants"],
   },
@@ -161,7 +170,7 @@ interface EventRow {
 async function extractReferences(
   title: string,
   description: string | null,
-): Promise<{ works: Array<{ title: string; composerName: string | null }>; participants: Array<{ name: string; type: string; role: string | null; ensembleType: string | null; instrument: string | null }> } | null> {
+): Promise<{ works: Array<{ title: string; composerName: string | null }>; participants: Array<{ name: string; type: string; role: string | null; ensembleType: string | null; instrument: string | null }>; tags: string[] } | null> {
   const text = `Titel: ${title}${description ? `\nBeschreibung: ${description}` : ""}`;
 
   const response = await callAiFunction(
@@ -175,7 +184,8 @@ async function extractReferences(
 
   const works = Array.isArray(args.works) ? args.works : [];
   const participants = Array.isArray(args.participants) ? args.participants : [];
-  return { works, participants };
+  const tags = Array.isArray(args.tags) ? args.tags.filter((t: unknown) => typeof t === "string" && t.trim()) : [];
+  return { works, participants, tags };
 }
 
 Deno.serve(async (req) => {
@@ -425,6 +435,41 @@ Deno.serve(async (req) => {
           });
         if (linkError) throw new Error(`event_participants link "${p.name}": ${linkError.message}`);
         linksCreated++;
+      }
+
+      for (const tagName of extracted.tags) {
+        const trimmed = tagName.trim();
+        if (!trimmed) continue;
+
+        const { data: existingTag } = await supabase
+          .from("tags")
+          .select("id")
+          .ilike("name", trimmed)
+          .maybeSingle();
+
+        let tagId: string;
+        if (existingTag) {
+          tagId = existingTag.id;
+        } else {
+          const { data: createdTag, error: tagInsertError } = await supabase
+            .from("tags")
+            .insert({ name: trimmed, is_ai_generated: true })
+            .select("id")
+            .single();
+          if (tagInsertError) {
+            // Race mit einem parallelen Lauf, der denselben Tag gerade
+            // angelegt hat (tags.name ist unique) — kein echter Fehler,
+            // einfach überspringen statt den ganzen Event-Write abzubrechen.
+            console.error(`tags insert "${trimmed}": ${tagInsertError.message}`);
+            continue;
+          }
+          tagId = createdTag.id;
+        }
+
+        const { error: eventTagError } = await supabase
+          .from("event_tags")
+          .upsert({ event_id: event.id, tag_id: tagId }, { onConflict: "event_id,tag_id" });
+        if (eventTagError) console.error(`event_tags link "${trimmed}": ${eventTagError.message}`);
       }
     } catch (err) {
       errors.push(`"${event.title}": ${err instanceof Error ? err.message : String(err)}`);
