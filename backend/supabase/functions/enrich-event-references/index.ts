@@ -36,6 +36,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAiFunction, hasAnyAiProviderConfigured, type AiFunctionDeclaration } from "../_shared/ai/router.ts";
 import { searchTavily } from "../_shared/tavily.ts";
+import { logSystemAction } from "../_shared/systemLog.ts";
 
 const SUMMARIZE_ARTIST_FUNCTION: AiFunctionDeclaration = {
   name: "summarize_artist",
@@ -321,7 +322,12 @@ Deno.serve(async (req) => {
       const { data: fuzzyMatches } = await supabase.rpc("find_matching_person", { p_name: name });
       const bestMatch = fuzzyMatches?.[0] as { id: string; full_name: string; similarity: number } | undefined;
       if (bestMatch && bestMatch.similarity >= FUZZY_AUTO_THRESHOLD) {
-        console.log(`getOrCreatePerson: fuzzy-auto-linked "${name}" -> "${bestMatch.full_name}" (${bestMatch.similarity})`);
+        await logSystemAction(supabase, "person", bestMatch.id, "fuzzy_auto_link", {
+          matched_name: name,
+          linked_to: bestMatch.full_name,
+          similarity: bestMatch.similarity,
+          event_id: event.id,
+        });
         personCache.set(key, bestMatch.id);
         return bestMatch.id;
       }
@@ -354,7 +360,12 @@ Deno.serve(async (req) => {
       const { data: fuzzyMatches } = await supabase.rpc("find_matching_ensemble", { p_name: name });
       const bestMatch = fuzzyMatches?.[0] as { id: string; name: string; similarity: number } | undefined;
       if (bestMatch && bestMatch.similarity >= FUZZY_AUTO_THRESHOLD) {
-        console.log(`getOrCreateEnsemble: fuzzy-auto-linked "${name}" -> "${bestMatch.name}" (${bestMatch.similarity})`);
+        await logSystemAction(supabase, "ensemble", bestMatch.id, "fuzzy_auto_link", {
+          matched_name: name,
+          linked_to: bestMatch.name,
+          similarity: bestMatch.similarity,
+          event_id: event.id,
+        });
         ensembleCache.set(key, bestMatch.id);
         return bestMatch.id;
       }

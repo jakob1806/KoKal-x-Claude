@@ -11,8 +11,12 @@ export const dynamic = "force-dynamic";
 // zusätzlich Events mit niedrigem import_confidence-Score, für die es bisher
 // GAR KEINE eigene Ansicht gab (der Score wurde bisher nur berechnet und
 // gespeichert, siehe 20260819000004_events_import_confidence.sql, aber
-// nirgends redaktionell sichtbar gemacht).
-const LOW_CONFIDENCE_THRESHOLD = 0.85;
+// nirgends redaktionell sichtbar gemacht). Filtert über review_status statt
+// eines global fixen Scores — die Triage-Schwellwerte sind pro Quelle
+// kalibriert (sources.confidence_thresholds, siehe ingest-source/write.ts
+// reviewStatusForScore()), ein globaler Cutoff hier würde das wieder blind
+// dafür machen.
+const REVIEW_STATUSES_TO_SHOW = ["needs_review", "needs_quick_check"] as const;
 
 interface LowConfidenceEvent {
   id: string;
@@ -42,8 +46,7 @@ export default async function ReviewQueuePage() {
     supabase
       .from("events")
       .select("id, title, start_datetime, status, import_confidence, venue:venues(name)")
-      .not("import_confidence", "is", null)
-      .lt("import_confidence", LOW_CONFIDENCE_THRESHOLD)
+      .in("review_status", REVIEW_STATUSES_TO_SHOW)
       .order("import_confidence", { ascending: true })
       .limit(30)
       .returns<LowConfidenceEvent[]>(),
@@ -76,7 +79,7 @@ export default async function ReviewQueuePage() {
       </div>
 
       <h2 className="mt-10 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-        Events mit niedrigem Confidence-Score (&lt; {Math.round(LOW_CONFIDENCE_THRESHOLD * 100)}%)
+        Events mit niedrigem Confidence-Score (quellenspezifisch kalibriert)
       </h2>
 
       {lowConfidenceError && (
