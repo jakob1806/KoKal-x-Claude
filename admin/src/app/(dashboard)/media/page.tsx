@@ -40,7 +40,7 @@ export default async function MediaPage() {
       <h1 className="text-xl font-semibold tracking-tight">Bilder — Lizenz-Review</h1>
       <p className="mt-1 max-w-xl text-sm text-neutral-500">
         Automatisch importierte Bilder gelten nie automatisch als frei nutzbar — jedes Bild braucht eine
-        redaktionelle Freigabe, bevor es an anderer Stelle als „lizenzgeklärt" gilt. Wird von der App aktuell noch
+        redaktionelle Freigabe, bevor es an anderer Stelle als &bdquo;lizenzgeklärt&rdquo; gilt. Wird von der App aktuell noch
         nicht ausgespielt (siehe events.image_urls[]), dies ist das Tracking dafür.
       </p>
 
