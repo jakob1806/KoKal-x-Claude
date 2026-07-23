@@ -234,6 +234,7 @@ export async function upsertRawEvent(
     }
 
     await linkSourceEntity(supabase, source, created.id);
+    if (raw.imageUrl) await recordImage(supabase, "event", created.id, raw.imageUrl);
 
     if (match) {
       const { error: dupError } = await supabase.from("duplicate_candidates").insert({
@@ -281,6 +282,7 @@ async function applyUpdate(
       // safe to fill the gap, nothing to accidentally overwrite.
       updates.image_urls = [raw.imageUrl];
     }
+    if (updates.image_urls) await recordImage(supabase, "event", existing.id, raw.imageUrl);
   }
 
   const { changedFields, oldValues, newValues } = diffFields(existing, updates);
@@ -311,6 +313,41 @@ async function applyUpdate(
   }
 
   return { outcome: "updated", eventId: existing.id };
+}
+
+/** Legt eine images-Zeile an (Architektur-Dokument Abschnitt 2.2/6:
+ * Lizenz-Tracking, siehe 20260819000003_images_and_tags.sql) — parallel zu
+ * events.image_urls[], das weiterhin unverändert die von der App
+ * gelesene Quelle bleibt. license_status startet immer bei 'unknown' mit
+ * needs_review=true: eine automatisch importierte Bild-URL gilt nie als
+ * automatisch freigegeben, unabhängig vom Confidence Score der übrigen
+ * Event-Daten. Idempotent (kein Duplikat bei erneutem Lauf derselben
+ * source_url für denselben origin_id) und best-effort — ein Fehlschlag
+ * hier lässt den eigentlichen Event-Write nicht scheitern. */
+async function recordImage(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  originType: "event",
+  originId: string,
+  sourceUrl: string,
+): Promise<void> {
+  const { data: existingImage } = await supabase
+    .from("images")
+    .select("id")
+    .eq("origin_type", originType)
+    .eq("origin_id", originId)
+    .eq("source_url", sourceUrl)
+    .maybeSingle();
+  if (existingImage) return;
+
+  const { error } = await supabase.from("images").insert({
+    origin_type: originType,
+    origin_id: originId,
+    source_url: sourceUrl,
+  });
+  if (error) {
+    console.error(`recordImage: failed to insert images row for ${originType} ${originId}: ${error.message}`);
+  }
 }
 
 /** Verknüpft ein Event automatisch mit event_participants, wenn die Quelle
