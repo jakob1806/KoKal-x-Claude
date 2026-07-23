@@ -32,15 +32,23 @@ function formatDate(iso: string) {
 
 export default async function EntityCandidatesPage() {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("entity_candidates")
-    .select(
-      `id, entity_type, name, suggested_event_title, suggested_event_start_datetime, source_url, created_at,
-       discovery_context, venue:venues(name)`,
-    )
-    .eq("status", "pending")
-    .order("created_at", { ascending: false })
-    .returns<CandidateRow[]>();
+  const [{ data, error }, { count: aiApprovedCount }] = await Promise.all([
+    supabase
+      .from("entity_candidates")
+      .select(
+        `id, entity_type, name, suggested_event_title, suggested_event_start_datetime, source_url, created_at,
+         discovery_context, venue:venues(name)`,
+      )
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .returns<CandidateRow[]>(),
+    supabase.from("system_logs").select("id", { count: "exact", head: true }).eq("action", "ai_auto_approved"),
+  ]);
+
+  const pendingByType = (data ?? []).reduce<Record<string, number>>((acc, c) => {
+    acc[c.entity_type] = (acc[c.entity_type] ?? 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="p-8">
@@ -51,6 +59,13 @@ export default async function EntityCandidatesPage() {
             Bisher unbekannte Personen/Ensembles/Institutionen aus der Ingestion — vor dem Anlegen in den Stammdaten
             hier prüfen und freigeben. Neue Personen/Ensembles-Kandidaten werden automatisch von der KI entschieden,
             wenn sie eindeutig sind; der Button unten holt das für schon länger wartende Kandidaten nach.
+          </p>
+          <p className="mt-2 text-xs text-neutral-500">
+            {data?.length ?? 0} insgesamt offen (
+            {Object.entries(pendingByType)
+              .map(([type, count]) => `${count} ${ENTITY_TYPE_LABEL[type] ?? type}`)
+              .join(", ") || "keine"}
+            ) · {aiApprovedCount ?? 0} bisher von der KI automatisch angelegt
           </p>
         </div>
         <ResolveWithAiButton />

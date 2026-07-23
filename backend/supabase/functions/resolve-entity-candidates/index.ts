@@ -66,11 +66,18 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   );
 
+  // "Nie geprüft" zuerst, dann am längsten nicht geprüft — verhindert, dass
+  // ein paar dauerhaft ambivalente Kandidaten am Anfang der Warteliste
+  // (z.B. mit possible_match) für immer alle neueren Kandidaten dahinter
+  // blockieren (siehe 20260826000001_entity_candidates_ai_checked_at.sql).
+  // Ein reines "order by created_at" hätte bei jedem Aufruf wieder dieselben
+  // paar unklaren Namen zuerst geliefert, nie die restliche Warteliste.
   const { data: candidates, error } = await supabase
     .from("entity_candidates")
     .select("id, entity_type, name, discovery_context")
     .eq("status", "pending")
     .in("entity_type", ["person", "ensemble"])
+    .order("ai_last_checked_at", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: true })
     .limit(limit)
     .returns<CandidateRow[]>();
@@ -100,10 +107,23 @@ Deno.serve(async (req) => {
   const leftPending = results.filter((r) => r.outcome === "pending").length;
   const errors = results.filter((r) => r.outcome === "error").map((r) => r.error!);
 
+  // Gesamtzahl noch offener Kandidaten NACH diesem Batch — ohne das sieht
+  // jeder einzelne Klick bei einer großen Warteliste (z.B. 150+) wie
+  // "immer dasselbe Ergebnis" aus, obwohl er tatsächlich Fortschritt macht.
+  // Erlaubt dem Client außerdem zu erkennen, wann wirklich nichts mehr
+  // offen ist (total_remaining_pending === 0), um eine Automatik-Schleife
+  // zuverlässig zu stoppen statt an einer festen Klickzahl zu raten.
+  const { count: totalRemainingPending } = await supabase
+    .from("entity_candidates")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending")
+    .in("entity_type", ["person", "ensemble"]);
+
   return jsonResponse({
     processed: list.length,
     approved,
     left_pending: leftPending,
+    total_remaining_pending: totalRemainingPending ?? 0,
     errors: errors.slice(0, 10),
   });
 });
@@ -113,13 +133,20 @@ async function processCandidate(
   supabase: any,
   candidate: CandidateRow,
 ): Promise<{ outcome: "approved" | "pending" | "error"; error?: string }> {
+  // Wird auf JEDEM Pfad gestempelt (auch pending/error) — sonst blockieren
+  // dieselben unklaren/fehlerhaften Kandidaten für immer den Anfang der
+  // Warteliste, siehe Migrationskommentar oben.
+  const stamp = () => supabase.from("entity_candidates").update({ ai_last_checked_at: new Date().toISOString() }).eq("id", candidate.id);
+
   try {
     if (candidate.discovery_context?.possible_match) {
+      await stamp();
       return { outcome: "pending" };
     }
 
     const enrichment = await enrichCandidateContext(candidate.entity_type, candidate.name);
     if (!enrichment) {
+      await stamp();
       return { outcome: "pending" };
     }
 
@@ -133,12 +160,18 @@ async function processCandidate(
     const createdIdColumn = candidate.entity_type === "person" ? "created_person_id" : "created_ensemble_id";
     const { data: created, error: createError } = await supabase.from(table).insert(payload).select("id").single();
     if (createError || !created) {
+      await stamp();
       return { outcome: "error", error: `"${candidate.name}": ${createError?.message ?? "kein Ergebnis"}` };
     }
 
     const { error: updateError } = await supabase
       .from("entity_candidates")
-      .update({ status: "approved", reviewed_at: new Date().toISOString(), [createdIdColumn]: created.id })
+      .update({
+        status: "approved",
+        reviewed_at: new Date().toISOString(),
+        ai_last_checked_at: new Date().toISOString(),
+        [createdIdColumn]: created.id,
+      })
       .eq("id", candidate.id);
     if (updateError) {
       return {
@@ -156,6 +189,7 @@ async function processCandidate(
 
     return { outcome: "approved" };
   } catch (err) {
+    await stamp();
     return { outcome: "error", error: `"${candidate.name}": ${err instanceof Error ? err.message : String(err)}` };
   }
 }

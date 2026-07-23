@@ -9,6 +9,7 @@ export interface ResolveWithAiResult {
   processed?: number;
   approved?: number;
   leftPending?: number;
+  totalRemainingPending?: number;
   errors?: string[];
   error?: string;
 }
@@ -67,6 +68,7 @@ export async function resolveEntityCandidatesWithAi(): Promise<ResolveWithAiResu
     processed: body.processed as number | undefined,
     approved: body.approved as number | undefined,
     leftPending: body.left_pending as number | undefined,
+    totalRemainingPending: body.total_remaining_pending as number | undefined,
     errors: body.errors as string[] | undefined,
   };
 }
