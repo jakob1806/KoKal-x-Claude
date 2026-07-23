@@ -15,6 +15,24 @@ interface SourceRow {
   person_id?: string | null;
   ensemble_id?: string | null;
   consecutive_failures?: number | null;
+  confidence_thresholds?: { auto?: number; quick?: number } | null;
+}
+
+/** Ordnet den Score einer Triage-Stufe zu, mit den PRO QUELLE kalibrierten
+ * Schwellwerten (sources.confidence_thresholds, Architektur-Dokument
+ * Abschnitt 0/4/2.2) statt eines global fixen Cutoffs. review_status ist
+ * weiterhin rein redaktionelle Metadaten für die Review-Queue-Triage und
+ * hat KEINEN Effekt auf Sichtbarkeit — das bleibt allein status/RLS
+ * (siehe 20260819000004_events_import_confidence.sql). */
+function reviewStatusForScore(
+  score: number,
+  thresholds: SourceRow["confidence_thresholds"],
+): "auto_published" | "needs_quick_check" | "needs_review" {
+  const auto = thresholds?.auto ?? 0.95;
+  const quick = thresholds?.quick ?? 0.85;
+  if (score >= auto) return "auto_published";
+  if (score >= quick) return "needs_quick_check";
+  return "needs_review";
 }
 
 // Structured feed types haben eine strukturell niedrigere Fehlerquote als
@@ -23,13 +41,14 @@ interface SourceRow {
 const STRUCTURED_SOURCE_TYPES = new Set(["schema_org", "rss", "ical", "api"]);
 
 /** Grobe Erstversion der Confidence-Score-Formel aus dem Architektur-
- * Dokument (Abschnitt 4) — bewusst NUR für neu angelegte Events berechnet
- * und rein informativ gespeichert (events.import_confidence,
- * review_status bleibt vorerst immer 'published'). Der nächste Schritt
- * (Auto-Publish/Review-Gating anhand des Scores) ist bewusst NICHT Teil
- * dieser Änderung — das würde das bestehende, bereits produktiv laufende
- * "alles landet als draft, Redaktion prüft"-Verhalten verändern und
- * verdient einen eigenen, separat zu testenden Schritt.
+ * Dokument (Abschnitt 4) — NUR für neu angelegte Events berechnet.
+ * review_status wird daraus über die pro Quelle kalibrierten Schwellwerte
+ * (sources.confidence_thresholds, siehe reviewStatusForScore()) triagiert,
+ * hat aber weiterhin KEINEN Effekt auf Sichtbarkeit: status bleibt immer
+ * 'draft' für neue Events, unabhängig vom Score — das bestehende, bereits
+ * produktiv laufende "alles landet als draft, Redaktion prüft"-Verhalten
+ * ändert sich dadurch nicht. review_status ist reine Triage-Metadaten für
+ * die Review-Queue (Quick-Check vs. Vollprüfung).
  *
  * Vereinfachungen gegenüber der vollen Formel im Dokument:
  *  - "entity_resolution_confidence" bewertet hier nur die Venue-Auflösung
@@ -202,6 +221,7 @@ export async function upsertRawEvent(
 
     const slug = await generateUniqueSlug(supabase, raw.title);
     const importConfidence = computeConfidenceScore(raw, source, venueResult.viaFixedSourceVenue);
+    const reviewStatus = reviewStatusForScore(importConfidence, source.confidence_thresholds);
     const { data: created, error: createError } = await supabase
       .from("events")
       .insert({
@@ -225,6 +245,7 @@ export async function upsertRawEvent(
         attribution_notice: raw.attributionNotice ?? null,
         attribution_license_url: raw.attributionLicenseUrl ?? null,
         import_confidence: importConfidence,
+        review_status: reviewStatus,
       })
       .select("id")
       .single();
