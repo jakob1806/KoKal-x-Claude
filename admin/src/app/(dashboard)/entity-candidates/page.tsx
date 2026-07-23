@@ -1,6 +1,7 @@
 import { ConfirmButton } from "@/components/confirm-button";
 import { createClient } from "@/lib/supabase/server";
 import { approveEntityCandidate, mergeEntityCandidate, rejectEntityCandidate } from "./actions";
+import { ResolveWithAiButton } from "./resolve-with-ai-button";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +44,17 @@ export default async function EntityCandidatesPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-xl font-semibold tracking-tight">Entity-Kandidaten</h1>
-      <p className="mt-1 max-w-xl text-sm text-neutral-500">
-        Bisher unbekannte Personen/Ensembles/Institutionen aus der Ingestion — vor dem Anlegen in den Stammdaten hier
-        prüfen und freigeben.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Entity-Kandidaten</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">
+            Bisher unbekannte Personen/Ensembles/Institutionen aus der Ingestion — vor dem Anlegen in den Stammdaten
+            hier prüfen und freigeben. Neue Personen/Ensembles-Kandidaten werden automatisch von der KI entschieden,
+            wenn sie eindeutig sind; der Button unten holt das für schon länger wartende Kandidaten nach.
+          </p>
+        </div>
+        <ResolveWithAiButton />
+      </div>
 
       {error && <p className="mt-6 text-sm text-amber-700">Konnte Kandidaten nicht laden: {error.message}</p>}
 

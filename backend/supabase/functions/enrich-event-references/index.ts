@@ -35,68 +35,8 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAiFunction, hasAnyAiProviderConfigured, type AiFunctionDeclaration } from "../_shared/ai/router.ts";
-import { searchTavily } from "../_shared/tavily.ts";
 import { logSystemAction } from "../_shared/systemLog.ts";
-
-const SUMMARIZE_ARTIST_FUNCTION: AiFunctionDeclaration = {
-  name: "summarize_artist",
-  description:
-    "Fasst Websuche-Treffer zu einem/einer klassischen Musiker*in/Ensemble zu einer kurzen " +
-    "Einordnung für die redaktionelle Prüfung zusammen.",
-  parameters: {
-    type: "object",
-    properties: {
-      bioSnippet: {
-        type: "string",
-        description:
-          "1-2 Sätze Einordnung (z. B. Instrument/Stimmfach, bekannt für, Orchester-Zugehörigkeit), " +
-          "nur wenn die Treffer erkennbar dieselbe Person/dasselbe Ensemble betreffen. Sonst leerer String.",
-      },
-      websiteUrl: {
-        type: "string",
-        description: "Offizielle Website/Künstlerprofil-URL, falls unter den Treffern erkennbar, sonst leerer String.",
-      },
-      confident: {
-        type: "boolean",
-        description:
-          "true nur, wenn die Treffer klar zu einem/einer klassischen Musiker*in/Ensemble mit diesem Namen " +
-          "passen. false bei Namensvettern, Unklarheit oder komplett fehlendem Bezug zu klassischer Musik.",
-      },
-    },
-    required: ["confident"],
-  },
-};
-
-/** Websuche + LLM-Zusammenfassung für einen neu entdeckten Kandidatennamen.
- * Rein additive Anreicherung von discovery_context — schlägt die Suche oder
- * Zusammenfassung fehl (kein TAVILY_API_KEY, Netzwerkfehler, kein Treffer),
- * wird der Kandidat trotzdem ganz normal ohne Anreicherung angelegt. */
-async function enrichCandidateContext(
-  entityType: "person" | "ensemble",
-  name: string,
-): Promise<{ bioSnippet: string | null; websiteUrl: string | null } | null> {
-  const tavilyApiKey = Deno.env.get("TAVILY_API_KEY");
-  if (!tavilyApiKey) return null;
-
-  const kind = entityType === "person" ? "Musiker" : "Ensemble";
-  const results = await searchTavily(tavilyApiKey, `${name} ${kind} klassische Musik`);
-  if (!results || results.length === 0) return null;
-
-  const searchText = results.map((r) => `${r.title}\n${r.content}`).join("\n\n");
-  const response = await callAiFunction(
-    "Du ordnest Websuche-Treffer zu einem möglichen klassischen Musiker/Ensemble ein. " +
-      "Sei konservativ: bei Unklarheit oder Namensvettern lieber confident=false und leere Felder.",
-    `Gesuchter Name: "${name}"\n\nTreffer:\n${searchText}`,
-    SUMMARIZE_ARTIST_FUNCTION,
-  );
-  const args = response?.args;
-  if (!args || args.confident !== true) return null;
-
-  return {
-    bioSnippet: typeof args.bioSnippet === "string" && args.bioSnippet.trim() ? args.bioSnippet.trim() : null,
-    websiteUrl: typeof args.websiteUrl === "string" && args.websiteUrl.trim() ? args.websiteUrl.trim() : null,
-  };
-}
+import { enrichCandidateContext } from "../_shared/entityEnrichment.ts";
 
 const ENRICH_FUNCTION: AiFunctionDeclaration = {
   name: "extract_references",
