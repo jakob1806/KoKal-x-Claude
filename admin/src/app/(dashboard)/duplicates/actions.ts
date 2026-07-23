@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { logSystemAction } from "@/lib/system-log";
 
 // event_b_id ist im Ingestion-Worker (backend/supabase/functions/ingest-
 // source/write.ts) immer das neu angelegte Draft-Event, event_a_id immer
@@ -30,6 +31,15 @@ export async function resolveDuplicateAsMerged(candidateId: string) {
   const { error: deleteError } = await supabase.from("events").delete().eq("id", candidate.event_b_id);
   if (deleteError) throw new Error(deleteError.message);
 
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "duplicate_candidate",
+    entityId: candidateId,
+    action: "merged",
+    actor: user?.email ?? user?.id ?? "unknown",
+    before: { deleted_event_id: candidate.event_b_id },
+  });
+
   revalidatePath("/duplicates");
 }
 
@@ -41,6 +51,14 @@ export async function resolveDuplicateAsDistinct(candidateId: string) {
     .update({ status: "dismissed", reviewed_at: new Date().toISOString() })
     .eq("id", candidateId);
   if (error) throw new Error(error.message);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "duplicate_candidate",
+    entityId: candidateId,
+    action: "dismissed",
+    actor: user?.email ?? user?.id ?? "unknown",
+  });
 
   revalidatePath("/duplicates");
 }

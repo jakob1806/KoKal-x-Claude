@@ -17,12 +17,12 @@ export async function resolveVenue(
   supabase: any,
   source: SourceRow,
   raw: RawEvent,
-): Promise<{ venueId: string } | { error: string }> {
+): Promise<{ venueId: string; viaFixedSourceVenue: boolean } | { error: string }> {
   if (source.venue_id) {
     // Explicitly configured on the source — always trusted, no city check.
     // Every source we run is either dedicated to one specific (Munich)
     // venue this way, or has no venue_id and relies on the fuzzy path below.
-    return { venueId: source.venue_id };
+    return { venueId: source.venue_id, viaFixedSourceVenue: true };
   }
 
   if (!raw.venueName) {
@@ -60,7 +60,7 @@ export async function resolveVenue(
     return { error: `no venue match for '${raw.venueName}'` };
   }
 
-  return { venueId: best.id };
+  return { venueId: best.id, viaFixedSourceVenue: false };
 }
 
 export async function findEventMatch(

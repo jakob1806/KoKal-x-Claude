@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const NAV_ITEMS = [
   { href: "/events", label: "Veranstaltungen" },
+  { href: "/review-queue", label: "Review-Queue" },
   { href: "/duplicates", label: "Duplikate-Review" },
   { href: "/cancellations", label: "Absage-Review" },
   { href: "/entity-candidates", label: "Entity-Kandidaten" },
@@ -9,7 +10,9 @@ const NAV_ITEMS = [
   { href: "/venues", label: "Venues" },
   { href: "/persons", label: "Personen" },
   { href: "/ensembles", label: "Ensembles" },
+  { href: "/festivals", label: "Festivals" },
   { href: "/media", label: "Bilder" },
+  { href: "/regions", label: "Regionen" },
   { href: "/users", label: "Benutzer" },
   { href: "/reports", label: "Fehlerberichte" },
 ];

@@ -9,10 +9,64 @@ import type { RawEvent } from "./types.ts";
 
 interface SourceRow {
   id: string;
+  type?: string;
   venue_id: string | null;
   organizer_id?: string | null;
   person_id?: string | null;
   ensemble_id?: string | null;
+  consecutive_failures?: number | null;
+}
+
+// Structured feed types haben eine strukturell niedrigere Fehlerquote als
+// freies HTML-Scraping mit KI-Extraktion — siehe Architektur-Dokument
+// Abschnitt 4 ("extraktions_methode").
+const STRUCTURED_SOURCE_TYPES = new Set(["schema_org", "rss", "ical", "api"]);
+
+/** Grobe Erstversion der Confidence-Score-Formel aus dem Architektur-
+ * Dokument (Abschnitt 4) — bewusst NUR für neu angelegte Events berechnet
+ * und rein informativ gespeichert (events.import_confidence,
+ * review_status bleibt vorerst immer 'published'). Der nächste Schritt
+ * (Auto-Publish/Review-Gating anhand des Scores) ist bewusst NICHT Teil
+ * dieser Änderung — das würde das bestehende, bereits produktiv laufende
+ * "alles landet als draft, Redaktion prüft"-Verhalten verändern und
+ * verdient einen eigenen, separat zu testenden Schritt.
+ *
+ * Vereinfachungen gegenüber der vollen Formel im Dokument:
+ *  - "entity_resolution_confidence" bewertet hier nur die Venue-Auflösung
+ *    (fest über sources.venue_id vs. Fuzzy-Match) — Personen/Ensembles
+ *    fließen noch nicht ein (die laufen ohnehin über die separate
+ *    entity_candidates-Pipeline in enrich-event-references).
+ *  - "quelle_zuverlässigkeit_historisch" nutzt sources.consecutive_failures
+ *    als Proxy statt einer echten Erfolgsquote über alle bisherigen Runs
+ *    (dafür fehlt aktuell eine aggregierte Statistik-Spalte/View). */
+function computeConfidenceScore(
+  raw: RawEvent,
+  source: SourceRow,
+  venueResolvedViaFixedId: boolean,
+): number {
+  const sourceReliability = Math.max(0, 1 - (source.consecutive_failures ?? 0) * 0.15);
+
+  const optionalFields = [raw.description, raw.priceMin, raw.priceMax, raw.imageUrl, raw.venueAddress];
+  const fieldCompleteness = optionalFields.filter((f) => f !== null && f !== undefined).length / optionalFields.length;
+
+  const entityResolutionConfidence = venueResolvedViaFixedId ? 1.0 : 0.65;
+
+  const extractionMethod = source.type && STRUCTURED_SOURCE_TYPES.has(source.type)
+    ? 1.0
+    : source.type === "manual"
+    ? 0.9
+    : 0.6; // "scrape" (HTML + KI-Extraktion)
+
+  const startsInFuture = new Date(raw.startDateTime).getTime() > Date.now();
+  const plausibility = startsInFuture ? 1.0 : 0.3;
+
+  const score = 0.30 * sourceReliability
+    + 0.25 * fieldCompleteness
+    + 0.20 * entityResolutionConfidence
+    + 0.15 * extractionMethod
+    + 0.10 * plausibility;
+
+  return Math.round(score * 100) / 100;
 }
 
 // eventId is present on every non-error outcome — index.ts uses it to track
@@ -147,6 +201,7 @@ export async function upsertRawEvent(
     }
 
     const slug = await generateUniqueSlug(supabase, raw.title);
+    const importConfidence = computeConfidenceScore(raw, source, venueResult.viaFixedSourceVenue);
     const { data: created, error: createError } = await supabase
       .from("events")
       .insert({
@@ -169,6 +224,7 @@ export async function upsertRawEvent(
         last_seen_at: nowIso,
         attribution_notice: raw.attributionNotice ?? null,
         attribution_license_url: raw.attributionLicenseUrl ?? null,
+        import_confidence: importConfidence,
       })
       .select("id")
       .single();

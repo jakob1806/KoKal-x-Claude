@@ -62,7 +62,9 @@ export async function runIngestion(
 
   const { data: source, error: sourceError } = await supabase
     .from("sources")
-    .select("id, name, type, url, venue_id, organizer_id, person_id, ensemble_id, config")
+    .select(
+      "id, name, type, url, venue_id, organizer_id, person_id, ensemble_id, config, consecutive_failures, crawl_frequency_minutes",
+    )
     .eq("id", sourceId)
     .maybeSingle();
   // deno-lint-ignore no-explicit-any
@@ -149,6 +151,7 @@ export async function runIngestion(
       // würde sonst fälschlich alles als "verschwunden" markieren.
       await finishRun(supabase, run.id, "skipped_unchanged", { events_found: 0 }, []);
       await touchSource(supabase, source.id, true);
+      await adjustCrawlFrequency(supabase, source.id, source.crawl_frequency_minutes, false);
       return result({ status: "skipped_unchanged", events_found: 0 });
     }
 
@@ -178,8 +181,11 @@ export async function runIngestion(
   if (!responseEtag && !responseLastModified && httpCache.lastBodyHash === bodyHash) {
     await finishRun(supabase, run.id, "skipped_unchanged", { events_found: 0 }, []);
     await touchSource(supabase, source.id, true);
+    await adjustCrawlFrequency(supabase, source.id, source.crawl_frequency_minutes, false);
     return result({ status: "skipped_unchanged", events_found: 0 });
   }
+
+  await adjustCrawlFrequency(supabase, source.id, source.crawl_frequency_minutes, true);
 
   await supabase
     .from("sources")
@@ -495,4 +501,31 @@ async function touchSource(supabase: any, sourceId: string, succeeded: boolean) 
       consecutive_failures: (current?.consecutive_failures ?? 0) + 1,
     })
     .eq("id", sourceId);
+}
+
+// Architektur-Dokument Abschnitt 5.1: adaptives Crawl-Intervall statt eines
+// für alle Quellen gleichen fixen Werts. Bewusst nur als Kalibrierung von
+// crawl_frequency_minutes umgesetzt (kein Scheduler-Verhalten geändert) —
+// run-all-sources ruft aktuell noch alle status='active'-Quellen bei jedem
+// (täglichen) Cron-Lauf auf, unabhängig von diesem Wert. Das Feld wird
+// trotzdem schon jetzt live kalibriert, damit eine künftige
+// Scheduler-Erweiterung (die crawl_frequency_minutes tatsächlich zum
+// Filtern nutzt) auf bereits eingeschwungenen Werten aufsetzt statt bei
+// 1440 (Default) für jede Quelle neu zu starten.
+const MIN_CRAWL_FREQUENCY_MINUTES = 60; // 1 Stunde
+const MAX_CRAWL_FREQUENCY_MINUTES = 10080; // 7 Tage
+
+// deno-lint-ignore no-explicit-any
+async function adjustCrawlFrequency(
+  supabase: any,
+  sourceId: string,
+  currentMinutes: number | null | undefined,
+  changed: boolean,
+) {
+  const current = currentMinutes ?? 1440;
+  const next = changed
+    ? Math.max(MIN_CRAWL_FREQUENCY_MINUTES, Math.round(current / 2))
+    : Math.min(MAX_CRAWL_FREQUENCY_MINUTES, Math.round(current * 2));
+  if (next === current) return;
+  await supabase.from("sources").update({ crawl_frequency_minutes: next }).eq("id", sourceId);
 }

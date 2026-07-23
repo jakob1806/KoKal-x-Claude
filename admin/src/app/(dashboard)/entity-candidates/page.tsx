@@ -1,6 +1,6 @@
 import { ConfirmButton } from "@/components/confirm-button";
 import { createClient } from "@/lib/supabase/server";
-import { approveEntityCandidate, rejectEntityCandidate } from "./actions";
+import { approveEntityCandidate, mergeEntityCandidate, rejectEntityCandidate } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,10 @@ interface CandidateRow {
   source_url: string | null;
   created_at: string;
   venue: { name: string } | null;
-  discovery_context: { tavily?: { bioSnippet: string | null; websiteUrl: string | null } } | null;
+  discovery_context: {
+    tavily?: { bioSnippet: string | null; websiteUrl: string | null };
+    possible_match?: { id: string; name: string; similarity: number };
+  } | null;
 }
 
 function formatDate(iso: string) {
@@ -94,6 +97,13 @@ export default async function EntityCandidatesPage() {
                       {candidate.discovery_context.tavily.websiteUrl}
                     </a>
                   )}
+                  {candidate.discovery_context?.possible_match && (
+                    <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                      Möglicherweise identisch mit „{candidate.discovery_context.possible_match.name}“ (
+                      {Math.round(candidate.discovery_context.possible_match.similarity * 100)}% Ähnlichkeit) —
+                      bereits vorhanden.
+                    </p>
+                  )}
                 </div>
                 <div className="mt-4 flex items-center justify-end gap-4">
                   <ConfirmButton
@@ -103,6 +113,19 @@ export default async function EntityCandidatesPage() {
                     pendingLabel="Speichere…"
                     className="text-sm font-medium text-neutral-600 hover:text-neutral-900 disabled:opacity-50"
                   />
+                  {candidate.discovery_context?.possible_match && (
+                    <ConfirmButton
+                      action={mergeEntityCandidate.bind(
+                        null,
+                        candidate.id,
+                        candidate.discovery_context.possible_match.id,
+                      )}
+                      confirmMessage={`Mit „${candidate.discovery_context.possible_match.name}“ zusammenführen? Es wird KEIN neuer Stammdaten-Eintrag angelegt.`}
+                      label="Zusammenführen"
+                      pendingLabel="Speichere…"
+                      className="text-sm font-medium text-amber-700 hover:text-amber-900 disabled:opacity-50"
+                    />
+                  )}
                   <ConfirmButton
                     action={approveEntityCandidate.bind(null, candidate.id)}
                     confirmMessage="Freigeben? Legt einen neuen (unverifizierten) Stammdaten-Eintrag an."

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { logSystemAction } from "@/lib/system-log";
 
 // Slugify hier dupliziert statt aus den Deno-Functions importiert — die
 // Admin-App (Next.js) und die Edge Functions (Deno) teilen keinen
@@ -31,6 +32,14 @@ export async function rejectEntityCandidate(candidateId: string) {
     .update({ status: "rejected", reviewed_at: new Date().toISOString() })
     .eq("id", candidateId);
   if (error) throw new Error(error.message);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "entity_candidate",
+    entityId: candidateId,
+    action: "rejected",
+    actor: user?.email ?? user?.id ?? "unknown",
+  });
 
   revalidatePath("/entity-candidates");
 }
@@ -91,6 +100,54 @@ export async function approveEntityCandidate(candidateId: string) {
     .update({ status: "approved", reviewed_at: new Date().toISOString(), [createdIdColumn]: newId })
     .eq("id", candidateId);
   if (updateError) throw new Error(updateError.message);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "entity_candidate",
+    entityId: candidateId,
+    action: "approved_created",
+    actor: user?.email ?? user?.id ?? "unknown",
+    after: { [createdIdColumn]: newId, name: candidate.name },
+  });
+
+  revalidatePath("/entity-candidates");
+}
+
+// Für Kandidaten mit einem discovery_context.possible_match (Fuzzy-Match
+// aus find_matching_person/find_matching_ensemble, siehe
+// 20260722000002_find_matching_person_ensemble.sql): verlinkt den Kandidaten
+// mit der BEREITS VORHANDENEN Person/dem Ensemble statt einen neuen
+// Stammdaten-Eintrag anzulegen. Legt bewusst NICHTS in persons/ensembles an.
+export async function mergeEntityCandidate(candidateId: string, matchedEntityId: string) {
+  const supabase = await createClient();
+
+  const { data: candidate, error: fetchError } = await supabase
+    .from("entity_candidates")
+    .select("entity_type")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (fetchError || !candidate) {
+    throw new Error(fetchError?.message ?? "Kandidat nicht gefunden");
+  }
+  if (candidate.entity_type !== "person" && candidate.entity_type !== "ensemble") {
+    throw new Error(`Zusammenführen nur für person/ensemble unterstützt, nicht "${candidate.entity_type}"`);
+  }
+
+  const createdIdColumn = candidate.entity_type === "person" ? "created_person_id" : "created_ensemble_id";
+  const { error: updateError } = await supabase
+    .from("entity_candidates")
+    .update({ status: "approved", reviewed_at: new Date().toISOString(), [createdIdColumn]: matchedEntityId })
+    .eq("id", candidateId);
+  if (updateError) throw new Error(updateError.message);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  await logSystemAction(supabase, {
+    entityType: "entity_candidate",
+    entityId: candidateId,
+    action: "merged",
+    actor: user?.email ?? user?.id ?? "unknown",
+    after: { [createdIdColumn]: matchedEntityId },
+  });
 
   revalidatePath("/entity-candidates");
 }
