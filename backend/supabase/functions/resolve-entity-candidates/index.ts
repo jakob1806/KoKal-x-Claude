@@ -15,17 +15,28 @@
 // andere Anreicherungs-Heuristik nötig (Institution statt Person/Ensemble),
 // noch nicht gebaut.
 //
-// Aufruf: POST { limit?: number } — verarbeitet bis zu `limit` (Default 30)
-// offene Kandidaten pro Lauf. Manuell auslösbar über den Button auf
-// /entity-candidates im Admin-Dashboard, kein Cron (jeder Lauf kostet
-// Tavily-/LLM-Credits pro geprüftem Namen).
+// Aufruf: POST { limit?: number } — verarbeitet bis zu `limit` (Default 12)
+// offene Kandidaten pro Lauf, mit begrenzter Nebenläufigkeit (siehe
+// CONCURRENCY). Manuell auslösbar über den Button auf /entity-candidates im
+// Admin-Dashboard, kein Cron (jeder Lauf kostet Tavily-/LLM-Credits pro
+// geprüftem Namen).
+//
+// Sequentielle Verarbeitung + ein zu hohes Limit haben Supabases
+// Edge-Function-Idle-Timeout (150s) gerissen (Tavily-Suche + LLM-Aufruf
+// pro Kandidat braucht mehrere Sekunden) — der Button im Admin blieb dann
+// einfach auf "KI prüft…" hängen, ohne dass je eine Antwort zurückkam.
+// CONCURRENCY parallelisiert die Kandidaten wie in run-all-sources/index.ts,
+// DEFAULT_LIMIT ist bewusst klein genug, um auch im ungünstigsten Fall
+// (alle Kandidaten brauchen eine echte Tavily-Suche) sicher unter dem
+// Timeout zu bleiben.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { hasAnyAiProviderConfigured } from "../_shared/ai/router.ts";
 import { enrichCandidateContext } from "../_shared/entityEnrichment.ts";
 import { logSystemAction } from "../_shared/systemLog.ts";
 
-const DEFAULT_LIMIT = 30;
+const DEFAULT_LIMIT = 12;
+const CONCURRENCY = 4;
 
 interface CandidateRow {
   id: string;
@@ -68,66 +79,86 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: `Kandidaten konnten nicht geladen werden: ${error.message}` }, 500);
   }
 
-  let approved = 0;
-  let leftPending = 0;
-  const errors: string[] = [];
+  const list = candidates ?? [];
+  const results: Array<{ outcome: "approved" | "pending" | "error"; error?: string }> = [];
 
-  for (const candidate of candidates ?? []) {
-    try {
-      if (candidate.discovery_context?.possible_match) {
-        leftPending++;
-        continue;
-      }
-
-      const enrichment = await enrichCandidateContext(candidate.entity_type, candidate.name);
-      if (!enrichment) {
-        leftPending++;
-        continue;
-      }
-
-      const table = candidate.entity_type === "person" ? "persons" : "ensembles";
-      const slug = await generateUniqueSlug(supabase, table, candidate.name);
-      const payload =
-        candidate.entity_type === "person"
-          ? { full_name: candidate.name, slug, is_verified: false, website_url: enrichment.websiteUrl }
-          : { name: candidate.name, slug, type: "sonstiges", is_verified: false, website_url: enrichment.websiteUrl };
-
-      const createdIdColumn = candidate.entity_type === "person" ? "created_person_id" : "created_ensemble_id";
-      const { data: created, error: createError } = await supabase.from(table).insert(payload).select("id").single();
-      if (createError || !created) {
-        errors.push(`"${candidate.name}": ${createError?.message ?? "kein Ergebnis"}`);
-        continue;
-      }
-
-      const { error: updateError } = await supabase
-        .from("entity_candidates")
-        .update({ status: "approved", reviewed_at: new Date().toISOString(), [createdIdColumn]: created.id })
-        .eq("id", candidate.id);
-      if (updateError) {
-        errors.push(`"${candidate.name}" angelegt, aber Kandidat-Update fehlgeschlagen: ${updateError.message}`);
-        continue;
-      }
-
-      await logSystemAction(supabase, candidate.entity_type, created.id, "ai_auto_approved", {
-        name: candidate.name,
-        entity_candidate_id: candidate.id,
-        bio_snippet: enrichment.bioSnippet,
-        batch: true,
-      }, "system (AI-Entscheidung, Batch-Nachlauf)");
-
-      approved++;
-    } catch (err) {
-      errors.push(`"${candidate.name}": ${err instanceof Error ? err.message : String(err)}`);
+  // Begrenzte Nebenläufigkeit statt eines sequentiellen for-Loops (siehe
+  // run-all-sources/index.ts für dasselbe Muster) — jeder Kandidat braucht
+  // eine echte Tavily-Suche + LLM-Aufruf, sequentiell riss das bei größeren
+  // Batches das 150s-Idle-Timeout der Edge Function.
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < list.length) {
+      const candidate = list[nextIndex++];
+      results.push(await processCandidate(supabase, candidate));
     }
   }
+  const workerCount = Math.min(CONCURRENCY, list.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  const approved = results.filter((r) => r.outcome === "approved").length;
+  const leftPending = results.filter((r) => r.outcome === "pending").length;
+  const errors = results.filter((r) => r.outcome === "error").map((r) => r.error!);
 
   return jsonResponse({
-    processed: candidates?.length ?? 0,
+    processed: list.length,
     approved,
     left_pending: leftPending,
     errors: errors.slice(0, 10),
   });
 });
+
+async function processCandidate(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  candidate: CandidateRow,
+): Promise<{ outcome: "approved" | "pending" | "error"; error?: string }> {
+  try {
+    if (candidate.discovery_context?.possible_match) {
+      return { outcome: "pending" };
+    }
+
+    const enrichment = await enrichCandidateContext(candidate.entity_type, candidate.name);
+    if (!enrichment) {
+      return { outcome: "pending" };
+    }
+
+    const table = candidate.entity_type === "person" ? "persons" : "ensembles";
+    const slug = await generateUniqueSlug(supabase, table, candidate.name);
+    const payload =
+      candidate.entity_type === "person"
+        ? { full_name: candidate.name, slug, is_verified: false, website_url: enrichment.websiteUrl }
+        : { name: candidate.name, slug, type: "sonstiges", is_verified: false, website_url: enrichment.websiteUrl };
+
+    const createdIdColumn = candidate.entity_type === "person" ? "created_person_id" : "created_ensemble_id";
+    const { data: created, error: createError } = await supabase.from(table).insert(payload).select("id").single();
+    if (createError || !created) {
+      return { outcome: "error", error: `"${candidate.name}": ${createError?.message ?? "kein Ergebnis"}` };
+    }
+
+    const { error: updateError } = await supabase
+      .from("entity_candidates")
+      .update({ status: "approved", reviewed_at: new Date().toISOString(), [createdIdColumn]: created.id })
+      .eq("id", candidate.id);
+    if (updateError) {
+      return {
+        outcome: "error",
+        error: `"${candidate.name}" angelegt, aber Kandidat-Update fehlgeschlagen: ${updateError.message}`,
+      };
+    }
+
+    await logSystemAction(supabase, candidate.entity_type, created.id, "ai_auto_approved", {
+      name: candidate.name,
+      entity_candidate_id: candidate.id,
+      bio_snippet: enrichment.bioSnippet,
+      batch: true,
+    }, "system (AI-Entscheidung, Batch-Nachlauf)");
+
+    return { outcome: "approved" };
+  } catch (err) {
+    return { outcome: "error", error: `"${candidate.name}": ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
 
 async function generateUniqueSlug(
   // deno-lint-ignore no-explicit-any
