@@ -48,6 +48,12 @@ export default async function SourcesPage() {
         </div>
         <div className="flex gap-3">
           <Link
+            href="/sources/discover"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+          >
+            Neue Quellen entdecken
+          </Link>
+          <Link
             href="/sources/onboard"
             className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
           >
