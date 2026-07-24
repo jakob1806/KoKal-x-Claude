@@ -1,6 +1,7 @@
 import { ConfirmButton } from "@/components/confirm-button";
 import { createClient } from "@/lib/supabase/server";
 import { confirmImageFree, confirmImageLicensed, rejectImage } from "./actions";
+import { EnrichImagesButton } from "./enrich-images-button";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ const ORIGIN_LABEL: Record<string, string> = {
   ensemble: "Ensemble",
   person: "Person",
   organizer: "Institution",
+  festival: "Festival",
 };
 
 interface ImageRow {
@@ -19,6 +21,7 @@ interface ImageRow {
   origin_id: string;
   photographer: string | null;
   copyright_notice: string | null;
+  license_notes: string | null;
   imported_at: string;
 }
 
@@ -30,19 +33,25 @@ export default async function MediaPage() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("images")
-    .select("id, source_url, origin_type, origin_id, photographer, copyright_notice, imported_at")
+    .select("id, source_url, origin_type, origin_id, photographer, copyright_notice, license_notes, imported_at")
     .eq("needs_review", true)
     .order("imported_at", { ascending: false })
     .returns<ImageRow[]>();
 
   return (
     <div className="p-8">
-      <h1 className="text-xl font-semibold tracking-tight">Bilder — Lizenz-Review</h1>
-      <p className="mt-1 max-w-xl text-sm text-neutral-500">
-        Automatisch importierte Bilder gelten nie automatisch als frei nutzbar — jedes Bild braucht eine
-        redaktionelle Freigabe, bevor es an anderer Stelle als &bdquo;lizenzgeklärt&rdquo; gilt. Wird von der App aktuell noch
-        nicht ausgespielt (siehe events.image_urls[]), dies ist das Tracking dafür.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Bilder — Lizenz-Review</h1>
+          <p className="mt-1 max-w-xl text-sm text-neutral-500">
+            Automatisch importierte/gefundene Bilder gelten nie automatisch als frei nutzbar — jedes Bild
+            braucht eine redaktionelle Freigabe. Eine Freigabe (&bdquo;Frei nutzbar&rdquo;/&bdquo;Lizenziert&rdquo;) übernimmt
+            das Bild direkt in das Foto-Feld der jeweiligen Venue/Person/Ensemble/Festival bzw. als
+            Event-Titelbild.
+          </p>
+        </div>
+        <EnrichImagesButton />
+      </div>
 
       {error && <p className="mt-6 text-sm text-amber-700">Konnte Bilder nicht laden: {error.message}</p>}
 
@@ -70,6 +79,9 @@ export default async function MediaPage() {
                   )}
                   {image.copyright_notice && (
                     <p className="mt-1 text-xs text-neutral-500">© {image.copyright_notice}</p>
+                  )}
+                  {image.license_notes && (
+                    <p className="mt-1 text-xs text-neutral-500">{image.license_notes}</p>
                   )}
                   <div className="mt-3 flex flex-wrap gap-3">
                     <ConfirmButton
