@@ -3,6 +3,7 @@ import Link from "next/link";
 const NAV_ITEMS = [
   { href: "/events", label: "Veranstaltungen" },
   { href: "/review-queue", label: "Review-Queue" },
+  { href: "/data-quality", label: "Datenqualität" },
   { href: "/duplicates", label: "Duplikate-Review" },
   { href: "/cancellations", label: "Absage-Review" },
   { href: "/entity-candidates", label: "Entity-Kandidaten" },
