@@ -490,6 +490,21 @@ Deno.serve(async (req) => {
         // getOrCreatePerson/getOrCreateEnsemble oben); kein Fehler.
         if (entityId === null) continue;
 
+        // Existenzprüfung wie bei event_works oben — ohne die legt ein
+        // erneuter Lauf für dasselbe Event (z.B. nach einem gezielten
+        // references_checked_at-Reset für einen Backfill, siehe
+        // 20260829000001_dedupe_event_participants.sql) einen ZWEITEN
+        // Eintrag für dieselbe Person/dasselbe Ensemble an — genau das ist
+        // hier passiert und zeigte sich als doppelte "Mitwirkende"-Chips
+        // in der App.
+        const { data: existingParticipant } = await supabase
+          .from("event_participants")
+          .select("id")
+          .eq("event_id", event.id)
+          .eq(isEnsemble ? "ensemble_id" : "person_id", entityId)
+          .maybeSingle();
+        if (existingParticipant) continue;
+
         const { error: linkError } = await supabase
           .from("event_participants")
           .insert({
