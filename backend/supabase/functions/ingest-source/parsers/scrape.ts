@@ -413,6 +413,33 @@ function parseFlexibleDate(raw: string): string | null {
     return toBerlinIsoString(year, month, day, hour, minute);
   }
 
+  // Deutscher Monatsname (ausgeschrieben ODER abgekürzt) OHNE Jahr, mit
+  // Punkt direkt hinterm Tag (z.B. "09. Mai" UND "06. Jun" — beide Formen
+  // kommen auf derselben toelzerknabenchor.de-Kalenderliste vor: nahe
+  // Termine schreiben den Monat aus, weiter entfernte kürzen ihn ab). Anders
+  // als der abbreviated-Fallback unten (für Seiten wie st-michael-
+  // muenchen.de, "Fr 24 Jul" — Ziffer+Whitespace+Buchstaben OHNE Punkt
+  // dazwischen) steht hier zwingend ein "." zwischen Tag und Monat, daher
+  // eigener Block statt Wiederverwendung. Uhrzeit kommt per timeSelector als
+  // eigenes "HH:MM"-Element dazu, wie beim TT.MM.-Kurzformat unten, nicht
+  // als "N Uhr"-Text wie beim german-Block oben. Muss NACH dem german-Block
+  // stehen, sonst würde er Daten MIT Jahr vorzeitig ohne Jahr interpretieren.
+  const germanNoYear = text.match(
+    /(\d{1,2})\.\s*([A-Za-zÄÖÜäöü]{3,})\b/i,
+  );
+  if (germanNoYear) {
+    const day = parseInt(germanNoYear[1], 10);
+    const nameLower = germanNoYear[2].toLowerCase();
+    const month = GERMAN_MONTHS[nameLower] ?? GERMAN_MONTHS_ABBR[nameLower.slice(0, 3)];
+    if (month) {
+      const timeMatch = text.match(/(\d{1,2}):(\d{2})/);
+      const hour = timeMatch ? parseInt(timeMatch[1], 10) : 0;
+      const minute = timeMatch ? parseInt(timeMatch[2], 10) : 0;
+      const year = inferYear(month, day, hour, minute);
+      return toBerlinIsoString(year, month, day, hour, minute);
+    }
+  }
+
   // Rein numerisches deutsches Kurzformat "TT.MM." ohne Jahr (z.B.
   // muenchener-biennale.de: Kalenderliste zeigt nur "23.04.", Jahr steht nur
   // im Seitentitel/Zeitraum, nicht pro Termin). Uhrzeit kommt hier über
