@@ -435,8 +435,20 @@ class EventDetailScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: AppSpacing.huge),
+                  // Reserviert Platz für die fixierte _TicketBar unten (siehe
+                  // Positioned weiter unten) — ein reiner Fixwert reichte
+                  // nicht: die Leiste ist mit Tickets-Button + Safe-Area-
+                  // Bottom-Inset (z.B. Home-Indicator) höher als AppSpacing.huge
+                  // allein, wodurch der Preistext das Ende von "Ähnliche
+                  // Veranstaltungen" überlappte. AppSpacing.xl obendrauf als
+                  // Sicherheitsmarge für die Button-Variante der Leiste.
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height:
+                          AppSpacing.huge +
+                          AppSpacing.xl +
+                          MediaQuery.of(context).padding.bottom,
+                    ),
                   ),
                 ],
               ),
