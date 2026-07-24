@@ -77,10 +77,7 @@ class EventCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(
                             AppRadius.cardImage,
                           ),
-                          child: Image(
-                            image: imageProvider,
-                            fit: BoxFit.cover,
-                          ),
+                          child: Image(image: imageProvider, fit: BoxFit.cover),
                         ),
                       )
                     else

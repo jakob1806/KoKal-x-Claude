@@ -534,7 +534,9 @@ class _DayCell extends StatelessWidget {
     // Anzahl, ohne TableCalendars eigene Tag-Semantik zu überschreiben.
     return Semantics(
       hint: eventCount > 0
-          ? (eventCount == 1 ? '1 Veranstaltung' : '$eventCount Veranstaltungen')
+          ? (eventCount == 1
+                ? '1 Veranstaltung'
+                : '$eventCount Veranstaltungen')
           : null,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -553,9 +555,7 @@ class _DayCell extends StatelessWidget {
                           height: 4,
                           margin: EdgeInsets.only(left: i == 0 ? 0 : 3),
                           decoration: BoxDecoration(
-                            color: colors.accentPrimary.withValues(
-                              alpha: 0.55,
-                            ),
+                            color: colors.accentPrimary.withValues(alpha: 0.55),
                             shape: BoxShape.circle,
                           ),
                         ),
