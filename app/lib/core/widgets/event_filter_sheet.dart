@@ -150,7 +150,8 @@ class _EventFilterSheetState extends ConsumerState<_EventFilterSheet> {
                         _genreIds.remove(genre.id);
                       }
                     }),
-                    showCheckmark: false,
+                    // Checkmark bewusst NICHT unterdrückt, siehe
+                    // Barrierefreiheits-Audit / interest_picker.dart.
                     selectedColor: colors.accentPrimary.withValues(alpha: 0.16),
                     labelStyle: TextStyle(
                       color: _genreIds.contains(genre.id)

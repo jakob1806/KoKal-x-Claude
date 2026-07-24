@@ -498,10 +498,13 @@ class _DayCell extends StatelessWidget {
         ),
         child: Text(
           '${day.day}',
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: colors.backgroundPrimary,
+            // Fest dunkel statt colors.backgroundPrimary, siehe Kommentar
+            // zur Badge-Farbe in event_card.dart — gleicher Kontrastfehler
+            // (2.15:1 im Light-Theme) auf demselben Goldton.
+            color: Color(0xFF1C1C1E),
           ),
         ),
       );
@@ -526,32 +529,42 @@ class _DayCell extends StatelessWidget {
     }
 
     final showDots = !dimmed && eventCount > 0;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        number,
-        const SizedBox(height: 3),
-        SizedBox(
-          height: 4,
-          child: showDots
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 0; i < (eventCount > 1 ? 2 : 1); i++)
-                      Container(
-                        width: 4,
-                        height: 4,
-                        margin: EdgeInsets.only(left: i == 0 ? 0 : 3),
-                        decoration: BoxDecoration(
-                          color: colors.accentPrimary.withValues(alpha: 0.55),
-                          shape: BoxShape.circle,
+    // Die Event-Punkte sind ein reines Farbsignal ohne Text-/Icon-Rückfall
+    // (siehe Barrierefreiheits-Audit) — ein hint ergänzt die Ansage um die
+    // Anzahl, ohne TableCalendars eigene Tag-Semantik zu überschreiben.
+    return Semantics(
+      hint: eventCount > 0
+          ? (eventCount == 1 ? '1 Veranstaltung' : '$eventCount Veranstaltungen')
+          : null,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          number,
+          const SizedBox(height: 3),
+          SizedBox(
+            height: 4,
+            child: showDots
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < (eventCount > 1 ? 2 : 1); i++)
+                        Container(
+                          width: 4,
+                          height: 4,
+                          margin: EdgeInsets.only(left: i == 0 ? 0 : 3),
+                          decoration: BoxDecoration(
+                            color: colors.accentPrimary.withValues(
+                              alpha: 0.55,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                  ],
-                )
-              : null,
-        ),
-      ],
+                    ],
+                  )
+                : null,
+          ),
+        ],
+      ),
     );
   }
 }

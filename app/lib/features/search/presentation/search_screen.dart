@@ -200,6 +200,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                   color: colors.textTertiary,
                                   size: 18,
                                 ),
+                                tooltip: 'Suche löschen',
                                 onPressed: () {
                                   _controller.clear();
                                   ref.read(_queryProvider.notifier).state = '';
@@ -267,52 +268,59 @@ class _FilterButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final active = activeCount > 0;
-    return InkWell(
+    return Semantics(
+      button: true,
+      label: active ? 'Filter, $activeCount aktiv' : 'Filter',
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.button),
-      child: Container(
-        width: 44,
-        height: 44,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: active ? colors.accentPrimary : colors.backgroundSecondary,
-          borderRadius: BorderRadius.circular(AppRadius.button),
-          border: Border.all(
-            color: active ? colors.accentPrimary : colors.separator,
-          ),
-        ),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Icon(
-              Icons.tune_rounded,
-              color: active ? Colors.white : colors.textSecondary,
-              size: 20,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.button),
+        child: Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? colors.accentPrimary : colors.backgroundSecondary,
+            borderRadius: BorderRadius.circular(AppRadius.button),
+            border: Border.all(
+              color: active ? colors.accentPrimary : colors.separator,
             ),
-            if (active)
-              Positioned(
-                right: -6,
-                top: -6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.accentSecondary,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '$activeCount',
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                Icons.tune_rounded,
+                color: active ? Colors.white : colors.textSecondary,
+                size: 20,
+              ),
+              if (active)
+                Positioned(
+                  right: -6,
+                  top: -6,
+                  child: ExcludeSemantics(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.accentSecondary,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$activeCount',
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -95,7 +95,11 @@ class InterestSection extends ConsumerWidget {
                   id: option.id,
                   isSelected: selectedIds.contains(option.id),
                 ),
-                showCheckmark: false,
+                // Checkmark bewusst NICHT unterdrückt (siehe
+                // Barrierefreiheits-Audit): sonst wird "ausgewählt" nur über
+                // Hintergrund-/Rahmen-/Textfarbe signalisiert — für
+                // farbenblinde Nutzer:innen (accentPrimary ist ein Rotton)
+                // kaum von "nicht ausgewählt" zu unterscheiden.
                 selectedColor: colors.accentPrimary.withValues(alpha: 0.16),
                 backgroundColor: colors.backgroundSecondary,
                 side: BorderSide(

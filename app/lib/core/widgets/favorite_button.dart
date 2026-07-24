@@ -59,21 +59,37 @@ class FavoriteButton extends ConsumerWidget {
           ? (activeColor ?? colors.accentPrimary)
           : (inactiveColor ?? defaultInactive),
     );
+    final label = isFavorited ? 'Favorisiert' : 'Nicht favorisiert';
 
     if (compact) {
-      return GestureDetector(
+      // Sichtbarer Kreis bleibt klein (Overlay auf Kartenbild), die Tap-
+      // Fläche wird aber unsichtbar auf die 44x44-Mindestgröße aufgeweitet
+      // (siehe Barrierefreiheits-Audit) statt den Kreis selbst zu vergrößern.
+      return Semantics(
+        button: true,
+        label: label,
         onTap: handleTap,
-        child: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: const Color(0x59000000),
-            shape: BoxShape.circle,
+        child: GestureDetector(
+          onTap: handleTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0x59000000),
+                  shape: BoxShape.circle,
+                ),
+                child: icon,
+              ),
+            ),
           ),
-          child: icon,
         ),
       );
     }
 
-    return IconButton(icon: icon, onPressed: handleTap);
+    return IconButton(icon: icon, tooltip: label, onPressed: handleTap);
   }
 }
