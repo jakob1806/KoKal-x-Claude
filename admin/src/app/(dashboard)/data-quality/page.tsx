@@ -43,7 +43,7 @@ export default async function DataQualityPage() {
   const events = data ?? [];
   const missingImages = events.filter((e) => !e.image_urls || e.image_urls.length === 0);
 
-  const staleCutoff = Date.now() - STALE_AFTER_DAYS * 24 * 60 * 60 * 1000;
+  const staleCutoff = new Date().getTime() - STALE_AFTER_DAYS * 24 * 60 * 60 * 1000;
   const staleEvents = events
     .filter((e) => !e.last_verified_at || new Date(e.last_verified_at).getTime() < staleCutoff)
     .sort((a, b) => {
