@@ -288,7 +288,9 @@ class _BarChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          // vertical war 9 (~33px Gesamthöhe) — unter der 44px-Mindest-
+          // Tap-Fläche, siehe Barrierefreiheits-Audit.
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

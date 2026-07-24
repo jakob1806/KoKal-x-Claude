@@ -37,15 +37,27 @@ class HomeScreen extends ConsumerWidget {
                       'München',
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
-                    GestureDetector(
+                    Semantics(
+                      button: true,
+                      label: 'Profil',
                       onTap: () => context.go('/profile'),
-                      child: CircleAvatar(
-                        radius: 16,
-                        backgroundColor: colors.accentPrimary,
-                        child: const Icon(
-                          Icons.person_rounded,
-                          size: 18,
-                          color: Colors.white,
+                      child: GestureDetector(
+                        onTap: () => context.go('/profile'),
+                        behavior: HitTestBehavior.opaque,
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Center(
+                            child: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: colors.accentPrimary,
+                              child: const Icon(
+                                Icons.person_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),

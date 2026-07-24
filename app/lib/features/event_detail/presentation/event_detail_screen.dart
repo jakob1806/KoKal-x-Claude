@@ -206,6 +206,7 @@ class EventDetailScreen extends ConsumerWidget {
                           color: Colors.white,
                           size: 20,
                         ),
+                        tooltip: 'Teilen',
                         onPressed: () => Share.share(
                           '${event['title']}${venue != null ? ' · ${venue['name']}' : ''}'
                           '${event['website_url'] != null ? '\n${event['website_url']}' : ''}',

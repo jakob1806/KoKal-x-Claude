@@ -12,7 +12,14 @@ class AppColors {
     backgroundElevated: Color(0xFFFFFFFF),
     textPrimary: Color(0xFF1C1C1E),
     textSecondary: Color(0xFF6E6E73),
-    textTertiary: Color(0xFFA1A1A6),
+    // War #A1A1A6 (2.46-2.57:1 gegen die Hintergründe) — Barrierefreiheits-
+    // Audit fand das als real genutzte Fließtextfarbe (Datum/Adresse/Meta-
+    // Text an ~15 Stellen), nicht nur als dekorative Tönung, und damit WCAG
+    // AA-pflichtig (4.5:1). Bei so hellen Hintergründen bleibt praktisch kein
+    // Spielraum für einen dritten, sichtbar helleren Grauton, der noch
+    // besteht — die Hierarchie zu textSecondary kommt jetzt primär über
+    // Schriftgröße/-gewicht, nicht mehr über Kontrast.
+    textTertiary: Color(0xFF727277),
     accentPrimary: Color(0xFF8B2635),
     accentSecondary: Color(0xFFC9A961),
     separator: Color(0xFFE5E5EA),
@@ -28,7 +35,10 @@ class AppColors {
     backgroundElevated: Color(0xFF232326),
     textPrimary: Color(0xFFF5F5F7),
     textSecondary: Color(0xFF98989D),
-    textTertiary: Color(0xFF636366),
+    // War #636366 (3.26:1 gegen den Hintergrund, reicht nur für UI-Komponenten
+    // (3:1), nicht für den echten Fließtext, als der es verwendet wird) —
+    // siehe Kommentar bei AppColors.light.textTertiary.
+    textTertiary: Color(0xFF7D7D82),
     accentPrimary: Color(0xFFC4566B),
     accentSecondary: Color(0xFFD9BC7F),
     separator: Color(0xFF38383A),
