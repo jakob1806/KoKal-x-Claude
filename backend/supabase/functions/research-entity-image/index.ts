@@ -15,9 +15,21 @@
 // beim Commit immer false (ein Mensch hat es gerade live geprüft, anders
 // als beim automatischen Cron-Fund).
 //
-// mode="search" ohne sourceUrl: automatische Recherche nach Entitätstyp
-// (Wikipedia-Portrait für Personen, Wikimedia Commons für Venues/
-// Ensembles, og:image der eigenen/Ticket-Seite für Events).
+// mode="search" ohne sourceUrl: automatische Recherche nach Entitätstyp.
+// Erster Schritt ist bei Personen/Venues/Ensembles/Werken/Events (ohne
+// eigenes og:image) eine breite Websuche über das GANZE offene Web statt
+// nur kuratierter Wikimedia-Quellen (Nutzerfeedback: "wikipedia commons
+// ist so ungenau und hat oft keine bilder") — zuerst über DuckDuckGos
+// HTML-Suche (searchImageViaWebSearch, kein Account/API-Key nötig, siehe
+// _shared/duckDuckGoSearch.ts), optional ergänzt um Geminis "Grounding
+// with Google Search" (GEMINI_IMAGE_SEARCH_API_KEY), falls gesetzt UND
+// DuckDuckGo nichts liefert — auf Nutzerwunsch bewusst NICHT die primäre
+// Quelle, da sie ein (kontingentiertes) Google-Konto voraussetzt, während
+// DuckDuckGo ohne Anmeldung auskommt. Findet keine der beiden Websuchen
+// etwas, fällt die Kette auf die bisherigen, engeren Quellen zurück:
+// Wikipedia-Portrait/Wikimedia Commons/Wikidata für Personen/Venues/
+// Ensembles/Werke, og:image der eigenen/Ticket-Seite bzw. das Venue-Foto
+// für Events.
 // mode="search" MIT sourceUrl: extrahiert nur das og:image der angegebenen
 // Seite (Nutzerwunsch: "man... schickt einen Link dazu, wo ein Bild sein
 // könnte und die KI das Bild heraussucht").
@@ -29,8 +41,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { extractOgImage } from "../_shared/ogImage.ts";
 import { fetchWikipediaPortrait } from "../_shared/wikipediaPortrait.ts";
 import { searchCommonsImage } from "../_shared/wikimediaCommons.ts";
+import { searchWikidataImage } from "../_shared/wikidataImage.ts";
+import { searchViaGeminiGrounding } from "../_shared/geminiGroundedSearch.ts";
+import { searchDuckDuckGo } from "../_shared/duckDuckGoSearch.ts";
 import { ensureCoverImage, ensureMagickReady, decodeImage, type ImageOriginType } from "../_shared/imagePipeline.ts";
-import { isPublicImageUrl } from "../_shared/imageValidation.ts";
+import { checkImageUrl, isPublicImageUrl } from "../_shared/imageValidation.ts";
 import { USER_AGENT } from "../_shared/robots.ts";
 
 type EntityType = "person" | "venue" | "ensemble" | "event" | "work" | "editorial_collection";
@@ -157,7 +172,7 @@ async function searchForEntity(
   const entity = await loadEntityName(supabase, entityType, entityId);
   if (!entity) return { found: false, error: "Eintrag nicht gefunden." };
 
-  const result = await searchWithoutPreview(entity, entityType, sourceUrlOverride);
+  const result = await searchWithoutPreview(supabase, entity, entityType, entityId, sourceUrlOverride);
   if (!result.found || !result.imageUrl) return result;
 
   // Server-seitig heruntergeladene Vorschau-Kopie ergänzen (siehe
@@ -165,15 +180,174 @@ async function searchForEntity(
   // trotzdem stehen, der Browser zeigt dann nur den direkten Hotlink.
   const preview = await downloadForPreview(result.imageUrl);
   if (preview) {
+    // Live beobachtet: ein Venue-Foto mit nur 225×225px (11,5 KB) wurde als
+    // "gefunden" angezeigt (im Browser hochskaliert, sah brauchbar aus),
+    // scheiterte dann aber beim Übernehmen an der 640×480-Mindestauflösung
+    // der Bildpipeline (ensureCoverImage/isAcceptableImageDimensions) —
+    // verwirrender Fehlschlag NACH der Vorschau statt vorher erkannt.
+    // Echte Dimensionen ohne vollen ImageMagick-Decode zu ermitteln würde
+    // dieselbe teure Initialisierung schon im Suchschritt fällig machen
+    // (siehe die frühere WORKER_RESOURCE_LIMIT-Untersuchung) — als
+    // günstiger Kompromiss: eine derart kleine Datei ist praktisch nie ein
+    // Foto ≥640×480 (selbst stark komprimiertes JPEG dieser Größe liegt
+    // deutlich über diesem Schwellenwert), daher schon hier als "nicht
+    // gefunden" behandeln statt einen zum Scheitern verurteilten Fund zu
+    // zeigen.
+    const MIN_PLAUSIBLE_PHOTO_BYTES = 20_000;
+    if (preview.bytes.byteLength < MIN_PLAUSIBLE_PHOTO_BYTES) {
+      return {
+        found: false,
+        error: `Gefundenes Bild ist zu klein (nur ${Math.round(preview.bytes.byteLength / 1024)} KB) — vermutlich ein Thumbnail unter der Mindestauflösung.`,
+      };
+    }
     result.imagePreviewBase64 = bytesToBase64(preview.bytes);
     result.imagePreviewMimeType = preview.mimeType;
   }
   return result;
 }
 
+/** Letzter Rückfall für Events ohne eigenes og:image: das (bereits
+ * freigegebene) Foto des Veranstaltungsorts, klar als solches markiert.
+ * null, wenn das Event keinen Venue hat oder der Venue selbst kein Foto. */
+async function venuePhotoFallback(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  eventId: string,
+): Promise<SearchResult | null> {
+  const { data: event } = await supabase.from("events").select("venue_id").eq("id", eventId).maybeSingle();
+  if (!event?.venue_id) return null;
+  const { data: venue } = await supabase.from("venues").select("name, photo_url").eq("id", event.venue_id)
+    .maybeSingle();
+  if (!venue?.photo_url) return null;
+  return {
+    found: true,
+    imageUrl: venue.photo_url,
+    sourceName: `Foto des Veranstaltungsorts (${venue.name})`,
+    matchReason: "Kein eigenes Bild gefunden — Rückfall auf das Venue-Foto.",
+    suggestedLicenseStatus: "confirmed_licensed",
+  };
+}
+
+/** Venue-Name für eine bessere Websuche-Anfrage bei Events — null bei
+ * jedem Fehler/fehlendem Venue, dann läuft die Suche nur mit dem
+ * Event-Titel. */
+async function loadEventVenueName(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  eventId: string,
+): Promise<string | null> {
+  const { data: event } = await supabase.from("events").select("venue_id").eq("id", eventId).maybeSingle();
+  if (!event?.venue_id) return null;
+  const { data: venue } = await supabase.from("venues").select("name").eq("id", event.venue_id).maybeSingle();
+  return (venue?.name as string | undefined) ?? null;
+}
+
+/** Komponisten-Name für eine bessere Websuche-Anfrage bei Werken — reiner
+ * Werktitel ist oft zu mehrdeutig ("Symphonie Nr. 5"), mit Komponist
+ * deutlich treffsicherer. null bei jedem Fehler/fehlendem Komponisten. */
+async function loadWorkComposerName(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  workId: string,
+): Promise<string | null> {
+  const { data: work } = await supabase.from("works").select("composer:persons(full_name)").eq("id", workId)
+    .maybeSingle();
+  const composer = work?.composer as { full_name?: string } | { full_name?: string }[] | null;
+  if (!composer) return null;
+  return (Array.isArray(composer) ? composer[0]?.full_name : composer.full_name) ?? null;
+}
+
+/** Breite KI-Websuche statt der bisher einzigen, engen Quellen (Wikipedia/
+ * Commons/Wikidata — auf Nutzerfeedback: "wikipedia commons ist so
+ * ungenau und hat oft keine bilder"). Nutzt Geminis "Grounding with Google
+ * Search" — statt nur eine Website-URL zu finden (wie schon in
+ * enrich-entity-images), wird hier direkt ein Bild GESUCHT: die echten,
+ * von Google zitierten Quellen-URLs (Presse, Agentur-/Künstlerseiten,
+ * Konzerthaus-Galerien, News-Artikel, ...) werden der Reihe nach auf ein
+ * og:image geprüft, bis eins erreichbar ist. Deutlich breiter als die
+ * kuratierten Wikimedia-Quellen, weil es das GESAMTE offene Web einbezieht,
+ * nicht nur Artikel mit Wikipedia-/Wikidata-Eintrag — die meisten
+ * Münchner Ensembles/Venues und viele (noch) lebende Musiker:innen haben
+ * genau das nicht.
+ *
+ * Eigenes Secret GEMINI_IMAGE_SEARCH_API_KEY statt des in
+ * enrich-entity-images für Website-URL-Discovery genutzten
+ * GEMINI_SEARCH_API_KEY — bewusst getrennt, sonst konkurriert die
+ * interaktive Bilder-Recherche mit dem alle 15 Minuten laufenden Cronjob
+ * um dasselbe Tageskontingent (live beobachtet: 429 RESOURCE_EXHAUSTED
+ * beim ersten Testaufruf, weil der Cronjob das gemeinsame Kontingent schon
+ * ausgeschöpft hatte). Gleiches Prinzip wie schon die Trennung von
+ * GEMINI_API_KEY vs. GEMINI_SEARCH_API_KEY, siehe geminiGroundedSearch.ts.
+ *
+ * null, wenn kein Key gesetzt ist, die Suche fehlschlägt, oder keine der
+ * zitierten Seiten ein nutzbares Bild liefert — Aufrufer fallen dann auf
+ * die bisherige Wikimedia-Kaskade zurück (bleibt als Sicherheitsnetz
+ * bestehen, gerade für gemeinfreie historische Komponisten-Porträts oft
+ * die zuverlässigste Quelle). */
+/** Probiert bis zu 4 Kandidaten-Seiten-URLs der Reihe nach auf ein
+ * erreichbares og:image, erste gewinnt — geteilte Auswertungslogik für
+ * beide Websuch-Quellen unten (bewusst mehrere statt nur die erste, da
+ * nicht jede zitierte Seite selbst ein Bild setzt, z.B. reine
+ * Textquellen/PDFs). */
+async function firstImageFromCandidates(
+  candidates: { url: string; title: string | null }[],
+  sourceLabel: string,
+): Promise<SearchResult | null> {
+  for (const candidate of candidates.slice(0, 4)) {
+    if (!isPublicImageUrl(candidate.url)) continue;
+    const imageUrl = await extractOgImage(candidate.url);
+    if (!imageUrl) continue;
+    const { reachable } = await checkImageUrl(imageUrl);
+    if (!reachable) continue;
+    return {
+      found: true,
+      imageUrl,
+      sourcePageUrl: candidate.url,
+      sourceName: new URL(candidate.url).hostname,
+      matchReason: `${sourceLabel}${candidate.title ? ` — „${candidate.title}“` : ""}`,
+    };
+  }
+  return null;
+}
+
+async function searchImageViaGroundedWeb(
+  query: string,
+  sourceLabel: string,
+): Promise<SearchResult | null> {
+  // DuckDuckGo zuerst — braucht kein Konto/API-Key/Kontingent (auf
+  // Nutzerwunsch: "brauchen wir hierfür echt ein google konto? geht das
+  // nicht auch mit scrapern"), im Gegensatz zu Gemini-Grounding sofort und
+  // ohne jede Voraussetzung nutzbar. War bisher nur ein selten wirksamer
+  // Notnagel für die reine URL-Suche (siehe enrich-entity-images), aber
+  // dieselbe Quelle funktioniert für die Bildersuche genauso gut/schlecht
+  // wie für die URL-Suche — hier als GLEICHWERTIGE erste Quelle, nicht nur
+  // Fallback.
+  const ddgResults = await searchDuckDuckGo(query, 4);
+  if (ddgResults && ddgResults.length > 0) {
+    const found = await firstImageFromCandidates(
+      ddgResults.map((r) => ({ url: r.url, title: null })),
+      `Websuche (${sourceLabel})`,
+    );
+    if (found) return found;
+  }
+
+  // Gemini-Grounding als optionale Ergänzung, NUR wenn ein eigener Key
+  // gesetzt ist (GEMINI_IMAGE_SEARCH_API_KEY, getrennt vom Cronjob-
+  // Kontingent, siehe Kommentar bei Deno.env.get unten) — bewusst NICHT
+  // Voraussetzung fürs Funktionieren dieser Funktion.
+  const apiKey = Deno.env.get("GEMINI_IMAGE_SEARCH_API_KEY");
+  if (!apiKey) return null;
+  const groundedResults = await searchViaGeminiGrounding(apiKey, query);
+  if (!groundedResults || groundedResults.length === 0) return null;
+  return firstImageFromCandidates(groundedResults, `KI-Websuche (${sourceLabel})`);
+}
+
 async function searchWithoutPreview(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
   entity: { name: string; websiteUrl: string | null; ticketUrl: string | null },
   entityType: EntityType,
+  entityId: string,
   sourceUrlOverride: string | undefined,
 ): Promise<SearchResult> {
   // Admin hat einen konkreten Link gegeben — nur DIESE Seite auswerten,
@@ -194,46 +368,130 @@ async function searchWithoutPreview(
 
   switch (entityType) {
     case "person": {
+      // Breite KI-Websuche zuerst (Nutzerfeedback, siehe Kommentar bei
+      // searchImageViaGroundedWeb) — findet auch Musiker:innen ohne
+      // Wikipedia-/Wikidata-Eintrag (Agentur-/Orchester-Bio-Seiten, Presse-
+      // fotos, Konzertankündigungen mit Porträt).
+      const grounded = await searchImageViaGroundedWeb(
+        `${entity.name} Foto Porträt Musiker Klassik`,
+        "Presse/Künstlerseite",
+      );
+      if (grounded) return grounded;
+
       const portrait = await fetchWikipediaPortrait(entity.name);
-      if (!portrait) return { found: false, error: "Kein Wikipedia-Artikel mit Bild gefunden." };
+      if (portrait) {
+        return {
+          found: true,
+          imageUrl: portrait.imageUrl,
+          sourcePageUrl: portrait.pageUrl,
+          sourceName: "Wikipedia",
+          matchReason: portrait.description ?? "Wikipedia-Infobox-Bild",
+          suggestedLicenseStatus: "confirmed_licensed",
+        };
+      }
+      // Wikidata als weitere, unabhängige Quelle — manche Personen haben
+      // kein eigenständiges Wikipedia-Infobox-Bild, aber ein strukturiert
+      // verknüpftes Wikidata-P18-Bild (über Commons lizenzgeprüft, siehe
+      // searchWikidataImage).
+      const wikidata = await searchWikidataImage(entity.name);
+      if (!wikidata) {
+        return { found: false, error: "Weder Websuche, Wikipedia noch Wikidata liefern ein Bild." };
+      }
       return {
         found: true,
-        imageUrl: portrait.imageUrl,
-        sourcePageUrl: portrait.pageUrl,
-        sourceName: "Wikipedia",
-        matchReason: portrait.description ?? "Wikipedia-Infobox-Bild",
-        suggestedLicenseStatus: "confirmed_licensed",
+        imageUrl: wikidata.url,
+        sourcePageUrl: wikidata.pageUrl,
+        sourceName: "Wikidata/Wikimedia Commons",
+        matchReason: `Strukturiertes Wikidata-Bild · Lizenz: ${wikidata.license}${wikidata.artist ? ` · ${wikidata.artist}` : ""}`,
+        suggestedLicenseStatus: "confirmed_free",
       };
     }
     case "venue":
     case "ensemble": {
+      const grounded = await searchImageViaGroundedWeb(
+        `${entity.name} München Foto`,
+        entityType === "venue" ? "Veranstaltungsort-Presse" : "Ensemble-Presse",
+      );
+      if (grounded) return grounded;
+
       const candidate = await searchCommonsImage(entity.name);
-      if (!candidate) return { found: false, error: "Kein passendes Bild auf Wikimedia Commons gefunden." };
-      return {
-        found: true,
-        imageUrl: candidate.url,
-        sourcePageUrl: candidate.pageUrl,
-        sourceName: "Wikimedia Commons",
-        matchReason: `Lizenz: ${candidate.license}${candidate.artist ? ` · ${candidate.artist}` : ""}`,
-        suggestedLicenseStatus: "confirmed_free",
-      };
+      if (candidate) {
+        return {
+          found: true,
+          imageUrl: candidate.url,
+          sourcePageUrl: candidate.pageUrl,
+          sourceName: "Wikimedia Commons",
+          matchReason: `Lizenz: ${candidate.license}${candidate.artist ? ` · ${candidate.artist}` : ""}`,
+          suggestedLicenseStatus: "confirmed_free",
+        };
+      }
+      const wikidata = await searchWikidataImage(entity.name);
+      if (wikidata) {
+        return {
+          found: true,
+          imageUrl: wikidata.url,
+          sourcePageUrl: wikidata.pageUrl,
+          sourceName: "Wikidata/Wikimedia Commons",
+          matchReason: `Strukturiertes Wikidata-Bild · Lizenz: ${wikidata.license}${wikidata.artist ? ` · ${wikidata.artist}` : ""}`,
+          suggestedLicenseStatus: "confirmed_free",
+        };
+      }
+      if (entity.websiteUrl) {
+        const ownSite = await extractOgImage(entity.websiteUrl);
+        if (ownSite) {
+          return {
+            found: true,
+            imageUrl: ownSite,
+            sourcePageUrl: entity.websiteUrl,
+            sourceName: new URL(entity.websiteUrl).hostname,
+            matchReason: "og:image der offiziellen Website",
+            suggestedLicenseStatus: "confirmed_licensed",
+          };
+        }
+      }
+      return { found: false, error: "Weder Wikimedia Commons/Wikidata noch die eigene Website liefern ein Bild." };
     }
     case "event": {
       const pageUrl = entity.websiteUrl ?? entity.ticketUrl;
-      if (!pageUrl) return { found: false, error: "Weder Website- noch Ticket-URL hinterlegt." };
-      const imageUrl = await extractOgImage(pageUrl);
-      if (!imageUrl) return { found: false, error: "Auf der Veranstaltungsseite wurde kein Bild gefunden." };
+      const ownImage = pageUrl ? await extractOgImage(pageUrl) : null;
+      if (ownImage) {
+        return {
+          found: true,
+          imageUrl: ownImage,
+          sourcePageUrl: pageUrl!,
+          sourceName: new URL(pageUrl!).hostname,
+          matchReason: "og:image der Veranstaltungsseite",
+        };
+      }
+
+      const venueName = await loadEventVenueName(supabase, entityId);
+      const grounded = await searchImageViaGroundedWeb(
+        `${entity.name}${venueName ? ` ${venueName}` : ""} München Konzert`,
+        "Presse/Ankündigung",
+      );
+      if (grounded) return grounded;
+
+      // Fallback auf das Venue-Foto (Nutzerfeedback: mehr als nur eine
+      // Quelle probieren) — nur wenn das Venue selbst schon ein
+      // freigegebenes Bild hat; klar als Venue-, nicht Event-Foto
+      // gekennzeichnet, damit die Redaktion bewusst entscheidet.
+      const venueFallback = await venuePhotoFallback(supabase, entityId);
+      if (venueFallback) return venueFallback;
       return {
-        found: true,
-        imageUrl,
-        sourcePageUrl: pageUrl,
-        sourceName: new URL(pageUrl).hostname,
-        matchReason: "og:image der Veranstaltungsseite",
+        found: false,
+        error: "Weder Veranstaltungsseite, Websuche noch der Veranstaltungsort liefern ein Bild.",
       };
     }
     case "work": {
+      const composerName = await loadWorkComposerName(supabase, entityId);
+      const grounded = await searchImageViaGroundedWeb(
+        `${entity.name}${composerName ? ` ${composerName}` : ""} Aufführung Foto`,
+        "Aufführung/Programmheft",
+      );
+      if (grounded) return grounded;
+
       // Werke haben oft keinen eigenständigen, exakt betitelten Wikipedia-
-      // Artikel (viele Titel sind mehrdeutig/uneindeutig) — Wikipedia zuerst
+      // Artikel (viele Titel sind mehrdeutig/uneindeutig) — Wikipedia
       // (funktioniert gut für bekannte Einzelwerke mit eigenem Artikel,
       // z. B. Opern/Oratorien), sonst Commons-Volltextsuche als breiterer
       // Fallback (Aufführungsfotos, Partitur-/Notenblatt-Scans, Plakate).
@@ -249,15 +507,26 @@ async function searchWithoutPreview(
         };
       }
       const candidate = await searchCommonsImage(entity.name);
-      if (!candidate) {
-        return { found: false, error: "Kein passendes Bild auf Wikipedia/Wikimedia Commons gefunden." };
+      if (candidate) {
+        return {
+          found: true,
+          imageUrl: candidate.url,
+          sourcePageUrl: candidate.pageUrl,
+          sourceName: "Wikimedia Commons",
+          matchReason: `Lizenz: ${candidate.license}${candidate.artist ? ` · ${candidate.artist}` : ""}`,
+          suggestedLicenseStatus: "confirmed_free",
+        };
+      }
+      const wikidata = await searchWikidataImage(entity.name);
+      if (!wikidata) {
+        return { found: false, error: "Weder Websuche, Wikipedia, Wikimedia Commons noch Wikidata liefern ein Bild." };
       }
       return {
         found: true,
-        imageUrl: candidate.url,
-        sourcePageUrl: candidate.pageUrl,
-        sourceName: "Wikimedia Commons",
-        matchReason: `Lizenz: ${candidate.license}${candidate.artist ? ` · ${candidate.artist}` : ""}`,
+        imageUrl: wikidata.url,
+        sourcePageUrl: wikidata.pageUrl,
+        sourceName: "Wikidata/Wikimedia Commons",
+        matchReason: `Strukturiertes Wikidata-Bild · Lizenz: ${wikidata.license}${wikidata.artist ? ` · ${wikidata.artist}` : ""}`,
         suggestedLicenseStatus: "confirmed_free",
       };
     }
